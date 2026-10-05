@@ -216,6 +216,14 @@ form.addEventListener("input", (event) => {
   if (event.target.name === "password") updatePasswordStrength();
 });
 
+document.querySelector(".google-button").addEventListener("click", () => {
+  if (state.role !== "patient") {
+    setMessage("تسجيل Google متاح لحساب المريض فقط. استخدم بيانات الصيدلية لتقديم طلب الفرع.");
+    return;
+  }
+  window.location.assign("/auth/google?role=patient");
+});
+
 document.querySelector(".password-toggle").addEventListener("click", (event) => {
   const input = form.elements.password;
   input.type = input.type === "password" ? "text" : "password";
@@ -238,6 +246,8 @@ async function initializeAuth() {
   const savedTheme = localStorage.getItem("dawaey-theme");
   if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme;
   syncForm();
+  const errorMessage = new URLSearchParams(window.location.search).get("error");
+  if (errorMessage) setMessage(errorMessage);
   try {
     const [bootstrap, session] = await Promise.all([requestApi("bootstrap"), requestApi("session")]);
     fillLocationSuggestions(bootstrap.pharmacies ?? []);

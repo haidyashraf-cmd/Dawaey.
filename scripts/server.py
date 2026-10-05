@@ -245,6 +245,27 @@ def public_account(connection: sqlite3.Connection, account: sqlite3.Row) -> dict
     return result
 
 
+def google_redirect_uri(handler) -> str:
+    base = os.environ.get("DAWAEY_PUBLIC_URL", "").strip().rstrip("/")
+    if not base:
+        scheme = handler.headers.get("X-Forwarded-Proto", "https")
+        base = f"{scheme}://{handler.headers.get('Host', 'localhost')}"
+    return f"{base}/auth/google/callback"
+
+
+def google_token_exchange(code: str, redirect_uri: str, client_id: str, client_secret: str) -> dict:
+    payload = urlencode({"code": code, "client_id": client_id, "client_secret": client_secret, "redirect_uri": redirect_uri, "grant_type": "authorization_code"}).encode("utf-8")
+    request = Request("https://oauth2.googleapis.com/token", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+    with urlopen(request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def google_user_profile(access_token: str) -> dict:
+    request = Request("https://openidconnect.googleapis.com/v1/userinfo", headers={"Authorization": f"Bearer {access_token}"})
+    with urlopen(request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 class DawaeyHandler(SimpleHTTPRequestHandler):
     server_version = "DawaeyLocal/1.0"
 
@@ -302,6 +323,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         if route.startswith("/data/") or route.startswith("/scripts/"):
             self.send_error(404)
+            return
+        if route == "/auth/google":
+            self.handle_google_start()
+            return
+        if route == "/auth/google/callback":
+            self.handle_google_callback()
             return
         if route == "/api/bootstrap":
             self.handle_bootstrap()
@@ -443,6 +470,61 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
+
+    def redirect_to_auth(self, error: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", f"/auth.html?error={urlencode({'message': error})[8:]}")
+        self.end_headers()
+
+    def handle_google_start(self) -> None:
+        client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        if not client_id:
+            self.redirect_to_auth("تسجيل Google غير مفعّل بعد؛ أضف إعدادات Google OAuth في الخادم.")
+            return
+        redirect_uri = google_redirect_uri(self)
+        query = urlencode({"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": "openid email profile", "access_type": "online", "prompt": "select_account"})
+        self.send_response(302)
+        self.send_header("Location", f"https://accounts.google.com/o/oauth2/v2/auth?{query}")
+        self.end_headers()
+
+    def handle_google_callback(self) -> None:
+        parameters = parse_qs(urlsplit(self.path).query)
+        if parameters.get("error"):
+            self.redirect_to_auth("تم إلغاء تسجيل الدخول باستخدام Google.")
+            return
+        code = parameters.get("code", [""])[0]
+        client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+        if not code or not client_id or not client_secret:
+            self.redirect_to_auth("إعدادات Google OAuth غير مكتملة.")
+            return
+        try:
+            token_data = google_token_exchange(code, google_redirect_uri(self), client_id, client_secret)
+            profile = google_user_profile(token_data["access_token"])
+            email = str(profile.get("email", "")).strip().casefold()
+            if not email or profile.get("email_verified") is False:
+                raise ValueError("لم يتم التحقق من بريد Google.")
+            name = str(profile.get("name") or profile.get("given_name") or email.split("@", 1)[0]).strip()[:100]
+            with closing(connect_database()) as connection, connection:
+                account = connection.execute("SELECT * FROM accounts WHERE contact_key = ?", (email,)).fetchone()
+                if account and account["role"] != "patient":
+                    raise ValueError("هذا البريد مرتبط بحساب صيدلية؛ استخدم دخول الصيدلية.")
+                if not account:
+                    salt = secrets.token_bytes(16)
+                    password = secrets.token_urlsafe(32)
+                    cursor = connection.execute("INSERT INTO accounts(role, full_name, contact, contact_key, password_salt, password_hash, created_at) VALUES ('patient', ?, ?, ?, ?, ?, ?)", (name, email, email, salt.hex(), password_digest(password, salt).hex(), int(time.time())))
+                    account_id = cursor.lastrowid
+                    connection.execute("INSERT INTO patient_profiles(account_id, governorate, district) VALUES (?, ?, ?)", ("غير محدد", "غير محدد"))
+                    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+                token = create_session(connection, account["id"])
+                cookie = self.session_cookie(token)
+            self.send_response(302)
+            self.send_header("Location", "/index.html?welcome=1#top")
+            self.send_header("Set-Cookie", cookie)
+            self.end_headers()
+        except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
+            self.log_error("Google OAuth failed: %s", error)
+            self.redirect_to_auth("تعذر تسجيل الدخول باستخدام Google. تأكد من إعداد OAuth وحاول مرة أخرى.")
 
     def handle_bootstrap(self) -> None:
         try:

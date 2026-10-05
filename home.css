@@ -439,3 +439,13 @@ body { background: var(--paper); }
 .main-nav a[href="pharmacy.html"] { color:#3b5bdb; font-weight:800; }.main-nav a[href="pharmacy.html"]::after { background:#ff7a59; }
 
 .brand img, .mobile-brand img { object-fit:contain; object-position:center; }
+
+
+/* Main navigation: clear active section and consistent pharmacy branding. */
+.main-nav a { position: relative; padding: 8px 0; }
+.main-nav a::after { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; border-radius: 3px; background: var(--teal-deep); content: ""; opacity: 0; transform: scaleX(.35); transition: opacity .16s, transform .16s, background .16s; }
+.main-nav a.is-active, .main-nav a:hover { color: var(--teal-deep); }
+.main-nav a.is-active::after { opacity: 1; transform: scaleX(1); }
+.main-nav a[href="pharmacy.html"] { color: var(--teal-deep); }
+.main-nav a[href="pharmacy.html"]::after { background: var(--teal-deep); }
+.pharmacy-only[hidden] { display: none !important; }

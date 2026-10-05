@@ -334,6 +334,25 @@ function setupDemo() {
   }));
 }
 
+function applyRoleVisibility() {
+  const pharmacyOnly = state.user?.role === "patient";
+  document.querySelectorAll("[data-pharmacy-only]").forEach((element) => {
+    element.hidden = pharmacyOnly;
+  });
+}
+function updateActiveNav() {
+  const links = [...document.querySelectorAll("[data-section]")];
+  if (!links.length) return;
+  const headerOffset = (document.querySelector("#site-header")?.offsetHeight || 70) + 90;
+  let active = "top";
+  if (window.scrollY > 180) {
+    for (const link of links) {
+      const section = document.getElementById(link.dataset.section);
+      if (section && section.offsetTop - headerOffset <= window.scrollY) active = link.dataset.section;
+    }
+  }
+  links.forEach((link) => link.classList.toggle("is-active", link.dataset.section === active));
+}
 function setupObservers() {
   const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
     if (!entry.isIntersecting) return;
@@ -341,7 +360,13 @@ function setupObservers() {
     observer.unobserve(entry.target);
   }), { threshold: .12 });
   document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
-  window.addEventListener("scroll", () => document.querySelector("#site-header").classList.toggle("is-scrolled", window.scrollY > 24), { passive: true });
+  const onScroll = () => {
+    document.querySelector("#site-header").classList.toggle("is-scrolled", window.scrollY > 24);
+    updateActiveNav();
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", updateActiveNav, { passive: true });
+  updateActiveNav();
 }
 
 function renderDonationResults(medicine, area) {
@@ -593,9 +618,11 @@ async function start() {
       loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
     }
+    applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");
   }
+  applyRoleVisibility();
   setupTabs();
   setupDemo();
   setupObservers();

@@ -483,13 +483,21 @@ async function loadDashboardData() {
 async function startApp() {
   document.querySelector("#today-label").textContent = dateFormat.format(new Date());
   try {
+    const sessionResponse = await fetch("/api/session", { credentials: "same-origin" });
+    const session = await sessionResponse.json().catch(() => ({}));
+    const user = session.user;
+    if (!user || user.role !== "pharmacy" || user.status !== "approved") {
+      content.setAttribute("aria-busy", "false");
+      content.innerHTML = `<section class="panel empty-state access-denied"><strong>لوحة الصيدلية مخصصة للصيدليات المعتمدة فقط</strong><p>سجّل دخولك بحساب صيدلية معتمد أو قدّم طلب تسجيل من صفحة الحسابات.</p><a class="filter-chip" href="auth.html">تسجيل دخول الصيدلية</a></section>`;
+      return;
+    }
     const [data] = await Promise.all([loadDashboardData(), loadDonations()]);
     state.data = data;
     showView("overview", false);
     startStockAlertPolling();
   } catch (error) {
     content.setAttribute("aria-busy", "false");
-    content.innerHTML = `<section class="panel empty-state"><strong>مش قادرين نقرأ ملف البيانات</strong><p>${escapeHtml(error.message)}. تأكد إنك فاتح الموقع من خلال خادم محلي.</p><button class="filter-chip" data-retry>حاول تاني</button></section>`;
+    content.innerHTML = `<section class="panel empty-state"><strong>مش قادرين نقرأ لوحة الصيدلية</strong><p>${escapeHtml(error.message)}. جرّب تحديث الصفحة.</p><button class="filter-chip" data-retry>حاول تاني</button></section>`;
   }
 }
 document.addEventListener("click", (event) => {

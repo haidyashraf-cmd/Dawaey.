@@ -407,19 +407,26 @@ function addAssistantMessage(text, kind) {
 }
 
 function setupDonationAndAssistant() {
-  document.querySelector("#donation-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#donation-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
     const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
     renderDonationResults(medicine, area);
     try {
-      const requests = JSON.parse(localStorage.getItem("dawaey-donation-requests") || "[]");
-      requests.unshift({ id: `don-${Date.now()}`, medicine, area, quantity, createdAt: new Date().toISOString(), status: "pending" });
-      localStorage.setItem("dawaey-donation-requests", JSON.stringify(requests.slice(0, 100)));
+      const response = await fetch("/api/donations", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ medicine, area, quantity }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
       const notice = document.querySelector("#donation-results");
-      notice.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل طلب التبرع ليظهر للصيدليات في هذه الصفحة.</p>');
-    } catch { /* Local storage can be unavailable in private browsing. */ }
+      notice.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل طلب التبرع على الخادم وسيظهر للصيدليات من أي جهاز.</p>');
+    } catch (error) {
+      showToast(error.message || "تعذر تسجيل طلب التبرع.");
+    }
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));

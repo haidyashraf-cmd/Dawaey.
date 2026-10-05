@@ -73,6 +73,18 @@ def initialize_database() -> None:
                 expires_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
+            CREATE TABLE IF NOT EXISTS donation_requests (
+                id TEXT PRIMARY KEY,
+                account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+                medicine TEXT NOT NULL,
+                area TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'completed', 'rejected')),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS donation_status ON donation_requests(status);
+            CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
             """
         )
 
@@ -190,6 +202,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/session":
             self.handle_session()
             return
+        if route == "/api/donations":
+            self.handle_donations()
+            return
         super().do_GET()
 
     def do_HEAD(self) -> None:
@@ -208,11 +223,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            payload = self.read_json() if route in ("/api/register", "/api/login") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
                 self.handle_login(payload)
+            elif route == "/api/donations":
+                self.handle_create_donation(payload)
             elif route == "/api/logout":
                 self.handle_logout()
             else:
@@ -224,6 +241,93 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if "pharmacy_applications.license_number" in str(error):
                 message = "رقم الترخيص مسجل بالفعل."
             self.send_json(409, {"error": message})
+
+    def do_PATCH(self) -> None:
+        route = urlsplit(self.path).path
+        if not route.startswith("/api/donations/"):
+            self.send_error(404)
+            return
+        if not self.verify_origin():
+            self.send_json(403, {"error": "الطلب غير مسموح."})
+            return
+        try:
+            donation_id = route.rsplit("/", 1)[-1].strip()
+            payload = self.read_json()
+            self.handle_update_donation(donation_id, payload)
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+
+    @staticmethod
+    def donation_public(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"],
+            "medicine": row["medicine"],
+            "area": row["area"],
+            "quantity": row["quantity"],
+            "status": row["status"],
+            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
+            "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
+        }
+
+    def handle_donations(self) -> None:
+        with closing(connect_database()) as connection:
+            rows = connection.execute(
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
+                "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()
+        self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
+
+    def handle_create_donation(self, payload: dict) -> None:
+        medicine = str(payload.get("medicine", "")).strip()
+        area = str(payload.get("area", "")).strip()
+        quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
+        if not medicine or len(medicine) > 160:
+            raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
+        if not area or len(area) > 160:
+            raise ValueError("اكتب المنطقة بشكل صحيح.")
+        if len(quantity) > 40:
+            raise ValueError("الكمية غير صالحة.")
+        now = int(time.time())
+        donation_id = f"don-{secrets.token_urlsafe(12)}"
+        token = self.get_session_token()
+        account_id = None
+        with closing(connect_database()) as connection, connection:
+            if token:
+                token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+                account = connection.execute(
+                    "SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+                    (token_hash, now),
+                ).fetchone()
+                account_id = account["account_id"] if account else None
+            connection.execute(
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, now, now),
+            )
+            row = connection.execute(
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                (donation_id,),
+            ).fetchone()
+        self.send_json(201, {"request": self.donation_public(row)})
+
+    def handle_update_donation(self, donation_id: str, payload: dict) -> None:
+        status = str(payload.get("status", "")).strip()
+        if status not in {"pending", "accepted", "completed", "rejected"}:
+            raise ValueError("حالة طلب التبرع غير صالحة.")
+        now = int(time.time())
+        with closing(connect_database()) as connection, connection:
+            cursor = connection.execute(
+                "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, donation_id),
+            )
+            if cursor.rowcount != 1:
+                self.send_json(404, {"error": "طلب التبرع غير موجود."})
+                return
+            row = connection.execute(
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                (donation_id,),
+            ).fetchone()
+        self.send_json(200, {"request": self.donation_public(row)})
 
     def handle_bootstrap(self) -> None:
         try:

@@ -25,6 +25,7 @@ const state = {
   toastTimer: null,
   alertSignature: "",
   alertTimer: null,
+  donations: [],
 };
 
 const numberFormat = new Intl.NumberFormat("ar-EG");
@@ -308,16 +309,30 @@ function updateSupplyResults() {
 }
 
 function getDonationRequests() {
-  try {
-    const requests = JSON.parse(localStorage.getItem("dawaey-donation-requests") || "[]");
-    return Array.isArray(requests) ? requests : [];
-  } catch { return []; }
+  return Array.isArray(state.donations) ? state.donations : [];
 }
 function donationStatusLabel(status) {
   return status === "accepted" ? "مقبول" : status === "completed" ? "تم التسليم" : status === "rejected" ? "مرفوض" : "جديد";
 }
 function donationStatusClass(status) { return status === "accepted" ? "accepted" : status === "completed" ? "completed" : status === "rejected" ? "rejected" : "pending"; }
-function saveDonationRequests(requests) { localStorage.setItem("dawaey-donation-requests", JSON.stringify(requests)); }
+async function updateDonationStatus(id, status) {
+  const response = await fetch(`/api/donations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "تعذر تحديث طلب التبرع.");
+  return payload.request;
+}
+
+async function loadDonations() {
+  const response = await fetch("/api/donations", { credentials: "same-origin" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "تعذر تحميل طلبات التبرع.");
+  state.donations = Array.isArray(payload.requests) ? payload.requests : [];
+}
 function getConsumptionValue(record) {
   const actual = ["الاستهلاك الشهري", "الاستهلاك", "كمية الاستهلاك"].map((key) => numericValue(record[key])).find((value) => value > 0);
   if (actual) return { value: actual, estimated: false };
@@ -468,7 +483,8 @@ async function loadDashboardData() {
 async function startApp() {
   document.querySelector("#today-label").textContent = dateFormat.format(new Date());
   try {
-    state.data = await loadDashboardData();
+    const [data] = await Promise.all([loadDashboardData(), loadDonations()]);
+    state.data = data;
     showView("overview", false);
     startStockAlertPolling();
   } catch (error) {
@@ -486,9 +502,17 @@ document.addEventListener("click", (event) => {
 
   const donationAction = event.target.closest("[data-donation-action]");
   if (donationAction) {
-    const requests = getDonationRequests();
-    const request = requests.find((item) => item.id === donationAction.dataset.donationId);
-    if (request) { request.status = donationAction.dataset.donationAction; saveDonationRequests(requests); renderDonations(); showToast(`تم تحديث حالة طلب ${request.medicine}`); }
+    const request = getDonationRequests().find((item) => item.id === donationAction.dataset.donationId);
+    if (request) {
+      donationAction.disabled = true;
+      updateDonationStatus(request.id, donationAction.dataset.donationAction)
+        .then((updated) => {
+          state.donations = state.donations.map((item) => item.id === updated.id ? updated : item);
+          renderDonations();
+          showToast(`تم تحديث حالة طلب ${updated.medicine}`);
+        })
+        .catch((error) => { donationAction.disabled = false; showToast(error.message); });
+    }
     return;
   }
   if (event.target.closest("#stock-alert-button")) {

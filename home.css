@@ -449,3 +449,10 @@ body { background: var(--paper); }
 .main-nav a[href="pharmacy.html"] { color: var(--teal-deep); }
 .main-nav a[href="pharmacy.html"]::after { background: var(--teal-deep); }
 .pharmacy-only[hidden] { display: none !important; }
+
+
+/* High-contrast active navigation state. */
+.main-nav a.is-active { color: #007f78 !important; font-weight: 800; }
+.main-nav a.is-active::after { background: #007f78 !important; opacity: 1 !important; transform: scaleX(1) !important; }
+.main-nav a.pharmacy-link { color: #007f78 !important; font-weight: 800; }
+.main-nav a.pharmacy-link::after { background: #007f78 !important; }

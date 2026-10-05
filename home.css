@@ -456,3 +456,9 @@ body { background: var(--paper); }
 .main-nav a.is-active::after { background: #007f78 !important; opacity: 1 !important; transform: scaleX(1) !important; }
 .main-nav a.pharmacy-link { color: #007f78 !important; font-weight: 800; }
 .main-nav a.pharmacy-link::after { background: #007f78 !important; }
+
+
+/* Pharmacy is a normal navigation link; only the currently visible section is highlighted. */
+.main-nav a.pharmacy-link { color: var(--muted) !important; font-weight: 600 !important; }
+.main-nav a.pharmacy-link::after { background: transparent !important; opacity: 0 !important; transform: scaleX(.35) !important; }
+.main-nav a.pharmacy-link:hover { color: var(--teal-deep) !important; }

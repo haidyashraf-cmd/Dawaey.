@@ -340,19 +340,16 @@ function applyRoleVisibility() {
     element.hidden = pharmacyOnly;
   });
 }
-function updateActiveNav() {
+function updateActiveNav(sectionId = null) {
   const links = [...document.querySelectorAll("[data-section]")];
   if (!links.length) return;
-  const headerOffset = (document.querySelector("#site-header")?.offsetHeight || 70) + 90;
-  let active = "top";
-  if (window.scrollY > 180) {
-    for (const link of links) {
-      const section = document.getElementById(link.dataset.section);
-      if (section && section.offsetTop - headerOffset <= window.scrollY) active = link.dataset.section;
-    }
+  let active = sectionId;
+  if (!active) {
+    active = window.scrollY < 180 ? "top" : links.find((link) => link.classList.contains("is-active"))?.dataset.section || "top";
   }
   links.forEach((link) => link.classList.toggle("is-active", link.dataset.section === active));
 }
+
 function setupObservers() {
   const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
     if (!entry.isIntersecting) return;
@@ -362,11 +359,19 @@ function setupObservers() {
   document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
   const onScroll = () => {
     document.querySelector("#site-header").classList.toggle("is-scrolled", window.scrollY > 24);
-    updateActiveNav();
+    if (window.scrollY < 180) updateActiveNav("top");
   };
   window.addEventListener("scroll", onScroll, { passive: true });
-  window.addEventListener("resize", updateActiveNav, { passive: true });
-  updateActiveNav();
+  window.addEventListener("resize", onScroll, { passive: true });
+  const sectionObserver = new IntersectionObserver((entries) => {
+    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+    if (visible[0]) updateActiveNav(visible[0].target.id);
+  }, { rootMargin: "-22% 0px -58% 0px", threshold: [0.1, 0.35, 0.6] });
+  document.querySelectorAll("[data-section]").forEach((link) => {
+    const section = document.getElementById(link.dataset.section);
+    if (section) sectionObserver.observe(section);
+  });
+  updateActiveNav(window.scrollY < 180 ? "top" : null);
 }
 
 function renderDonationResults(medicine, area) {

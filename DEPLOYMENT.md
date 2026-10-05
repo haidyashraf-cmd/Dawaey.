@@ -70,3 +70,24 @@ docker run --rm -p 3000:3000 \
 ## ملاحظة مهمة
 
 الرابط التجريبي في بيئة Manus مؤقت. النشر الدائم يحتاج اختيار منصة استضافة وحسابًا/بيانات اتصال بها. GitHub يحفظ الكود وملف البيانات فقط، ولا يشغّل Python أو قاعدة البيانات بنفسه.
+
+## إشعارات تسجيل الصيدليات
+
+عند تسجيل صيدلية جديدة، يرسل الخادم إشعارًا إلى Telegram وMeta WhatsApp إذا كانت متغيرات البيئة موجودة:
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+WHATSAPP_ACCESS_TOKEN
+WHATSAPP_PHONE_NUMBER_ID
+WHATSAPP_RECIPIENT_PHONE=201030418337
+WHATSAPP_VERIFY_TOKEN
+```
+
+يحتوي الإشعار على زري **قبول** و**رفض**. Telegram يعالج الزر عبر polling. WhatsApp يستقبل الرد عبر:
+
+```text
+https://YOUR-RAILWAY-DOMAIN/webhooks/whatsapp
+```
+
+في Meta Webhooks استخدم `WHATSAPP_VERIFY_TOKEN` نفسه، واشترك في أحداث WhatsApp messages. قد تحتاج رسائل WhatsApp الأولى إلى Message Template معتمد من Meta، حسب حالة نافذة المحادثة وحساب WhatsApp Business.

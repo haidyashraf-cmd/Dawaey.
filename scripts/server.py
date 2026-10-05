@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import threading
 import time
+import urllib.parse
 from contextlib import closing
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,8 @@ SESSION_SECONDS = 60 * 60 * 24 * 14
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
 LAST_GEOCODE_REQUEST = 0.0
+TELEGRAM_OFFSET = 0
+TELEGRAM_THREAD_STARTED = False
 
 
 def connect_database() -> sqlite3.Connection:
@@ -105,6 +108,113 @@ def normalize_contact(value: object) -> tuple[str, str]:
 
 def password_digest(password: str, salt: bytes) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+
+
+def external_json_request(url: str, payload: dict, headers: dict | None = None) -> dict:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(url, data=body, headers={"Content-Type": "application/json", **(headers or {})}, method="POST")
+    with urlopen(request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def update_pharmacy_application(account_id: int, status: str) -> bool:
+    if status not in {"approved", "rejected"}:
+        return False
+    with closing(connect_database()) as connection, connection:
+        cursor = connection.execute("UPDATE pharmacy_applications SET status = ? WHERE account_id = ?", (status, account_id))
+        return cursor.rowcount == 1
+
+
+def send_telegram_notification(account_id: int, details: dict) -> None:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        return
+    text = ("طلب تسجيل صيدلية جديد\n\n"
+            f"الصيدلية: {details['pharmacyName']}\n"
+            f"المسؤول: {details['pharmacistName']}\n"
+            f"الهاتف: {details['contact']}\n"
+            f"المنطقة: {details['district']}\n"
+            f"الترخيص: {details['licenseNumber']}\n"
+            f"العنوان: {details['address']}")
+    payload = {"chat_id": chat_id, "text": text, "reply_markup": {"inline_keyboard": [[
+        {"text": "قبول", "callback_data": f"pharmacy:approve:{account_id}"},
+        {"text": "رفض", "callback_data": f"pharmacy:reject:{account_id}"},
+    ]]}}
+    external_json_request(f"https://api.telegram.org/bot{token}/sendMessage", payload)
+
+
+def send_whatsapp_notification(account_id: int, details: dict) -> None:
+    token = os.environ.get("WHATSAPP_ACCESS_TOKEN", "").strip()
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    recipient = os.environ.get("WHATSAPP_RECIPIENT_PHONE", "").strip()
+    if not token or not phone_id or not recipient:
+        return
+    recipient = re.sub(r"\D", "", recipient)
+    if recipient.startswith("0"):
+        recipient = "20" + recipient[1:]
+    payload = {"messaging_product": "whatsapp", "to": recipient, "type": "interactive", "interactive": {
+        "type": "button", "body": {"text": f"طلب تسجيل صيدلية جديد: {details['pharmacyName']}\nالمسؤول: {details['pharmacistName']}\nالهاتف: {details['contact']}\nالمنطقة: {details['district']}"},
+        "action": {"buttons": [
+            {"type": "reply", "reply": {"id": f"pharmacy:approve:{account_id}", "title": "قبول"}},
+            {"type": "reply", "reply": {"id": f"pharmacy:reject:{account_id}", "title": "رفض"}},
+        ]},
+    }}
+    external_json_request(f"https://graph.facebook.com/v23.0/{phone_id}/messages", payload, {"Authorization": f"Bearer {token}"})
+
+
+def notify_pharmacy_application(account_id: int, details: dict) -> None:
+    for sender in (send_telegram_notification, send_whatsapp_notification):
+        try:
+            sender(account_id, details)
+        except Exception as error:
+            print(f"Notification failed ({sender.__name__}): {error}", file=sys.stderr)
+
+
+def handle_approval_callback(callback_data: str) -> str | None:
+    match = re.fullmatch(r"pharmacy:(approve|reject):(\d+)", callback_data or "")
+    if not match:
+        return None
+    status = "approved" if match.group(1) == "approve" else "rejected"
+    account_id = int(match.group(2))
+    return status if update_pharmacy_application(account_id, status) else None
+
+
+def telegram_poll_loop() -> None:
+    global TELEGRAM_OFFSET
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        return
+    while True:
+        try:
+            query = urllib.parse.urlencode({"timeout": 20, "offset": TELEGRAM_OFFSET})
+            with urlopen(f"https://api.telegram.org/bot{token}/getUpdates?{query}", timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            for update in result.get("result", []):
+                TELEGRAM_OFFSET = max(TELEGRAM_OFFSET, int(update.get("update_id", 0)) + 1)
+                callback = update.get("callback_query") or {}
+                data = callback.get("data", "")
+                status = handle_approval_callback(data)
+                if status:
+                    callback_id = callback.get("id")
+                    if callback_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": "تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب"})
+                    message = callback.get("message") or {}
+                    chat_id = (message.get("chat") or {}).get("id")
+                    message_id = message.get("message_id")
+                    if chat_id and message_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
+        except Exception as error:
+            print(f"Telegram polling failed: {error}", file=sys.stderr)
+            time.sleep(5)
+
+
+def start_telegram_polling() -> None:
+    global TELEGRAM_THREAD_STARTED
+    if TELEGRAM_THREAD_STARTED or not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        return
+    TELEGRAM_THREAD_STARTED = True
+    threading.Thread(target=telegram_poll_loop, name="telegram-approval-poller", daemon=True).start()
 
 
 def create_session(connection: sqlite3.Connection, account_id: int) -> str:
@@ -205,6 +315,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/donations":
             self.handle_donations()
             return
+        if route == "/webhooks/whatsapp":
+            self.handle_whatsapp_verification()
+            return
         super().do_GET()
 
     def do_HEAD(self) -> None:
@@ -216,14 +329,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlsplit(self.path).path
-        if not route.startswith("/api/"):
+        if not route.startswith("/api/") and route != "/webhooks/whatsapp":
             self.send_error(404)
             return
-        if not self.verify_origin():
+        if route.startswith("/api/") and not self.verify_origin():
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
@@ -232,6 +345,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.handle_create_donation(payload)
             elif route == "/api/logout":
                 self.handle_logout()
+            elif route == "/webhooks/whatsapp":
+                self.handle_whatsapp_webhook(payload)
             else:
                 self.send_json(404, {"error": "المسار غير موجود."})
         except ValueError as error:
@@ -392,6 +507,26 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         self.send_json(200, {"area": str(area), "attribution": "OpenStreetMap contributors"})
 
+    def handle_whatsapp_verification(self) -> None:
+        parameters = parse_qs(urlsplit(self.path).query)
+        mode = parameters.get("hub.mode", [""])[0]
+        verify_token = parameters.get("hub.verify_token", [""])[0]
+        challenge = parameters.get("hub.challenge", [""])[0]
+        expected = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+        if mode == "subscribe" and expected and verify_token == expected:
+            self.send_response(200); self.end_headers(); self.wfile.write(challenge.encode("utf-8")); return
+        self.send_error(403)
+
+    def handle_whatsapp_webhook(self, payload: dict) -> None:
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                for message in (change.get("value", {}).get("messages", []) or []):
+                    button_id = ((message.get("interactive") or {}).get("button_reply") or {}).get("id", "")
+                    status = handle_approval_callback(button_id)
+                    if status:
+                        self.send_json(200, {"ok": True, "status": status}); return
+        self.send_json(200, {"ok": True})
+
     def handle_register(self, payload: dict) -> None:
         role = str(payload.get("role", ""))
         if role not in {"patient", "pharmacy"}:
@@ -445,7 +580,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp),
             )
-        self.send_json(202, {"status": "pending", "message": "تم حفظ طلب الصيدلية. الحساب قيد المراجعة قبل تفعيله."})
+        notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
+        self.send_json(202, {"status": "pending", "message": "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة."})
 
     def handle_login(self, payload: dict) -> None:
         _, contact_key = normalize_contact(payload.get("contact"))
@@ -517,6 +653,7 @@ def main() -> None:
         raise FileNotFoundError(f"Missing published dataset: {DATA_PATH}")
     print("Dawaey published dataset loaded")
     initialize_database()
+    start_telegram_polling()
     port = int(os.environ.get("PORT", "5173"))
     server = ThreadingHTTPServer(("", port), DawaeyHandler)
     print(f"Dawaey server listening on http://localhost:{port}")

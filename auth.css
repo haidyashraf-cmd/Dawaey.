@@ -77,8 +77,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .submit-button:hover { background: #075c4c; transform: translateY(-1px); }
 .submit-button:disabled { opacity: .64; cursor: wait; transform: none; }
 .review-note { margin: 8px 0 0; color: #8b6242; font-size: 8px; line-height: 1.7; }
-.google-button { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: not-allowed; font-size: 9px; }
-.google-button span { color: #889798; font-size: 8px; }
 .form-footnote { margin: 9px 0 0; color: var(--muted); font-size: 8px; text-align: center; }
 .auth-footer { display: flex; justify-content: center; gap: 8px; margin: auto 0 0; padding-top: 12px; color: #859593; font-size: 8px; }
 .auth-footer a { color: inherit; text-decoration: none; }.auth-footer a:hover { color: var(--teal-dark); }
@@ -205,7 +203,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .password-toggle { height: 46px; padding-inline: 9px; font-size: 10px; }
 .submit-button { min-height: 49px; margin-top: 16px; border-radius: 9px; background: linear-gradient(135deg, #087362, #0b9c82); box-shadow: 0 8px 18px rgba(8,115,98,.18); font-size: 12px; }
 .submit-button:hover { background: linear-gradient(135deg, #075c4c, #087d69); box-shadow: 0 10px 22px rgba(8,115,98,.24); }
-.google-button { min-height: 42px; border-radius: 8px; font-size: 10px; }
 .form-footnote { margin-top: 11px; font-size: 9px; line-height: 1.7; }
 .privacy-check { font-size: 10px; }
 .review-note, .form-note { font-size: 9px; }
@@ -293,7 +290,6 @@ body { min-height: 100vh; background: radial-gradient(ellipse at 50% 0%, rgba(10
 .field > input, .password-wrap input { height: 44px; }
 .password-toggle { height: 44px; }
 .submit-button { min-height: 47px; }
-.google-button { min-height: 39px; }
 @media (max-width: 700px) {
   .auth-content { width: min(100%, 500px); padding: 13px 14px 15px; }
   .auth-card-visual { min-height: 85px; gap: 10px; padding: 6px; margin-bottom: 13px; }
@@ -327,7 +323,7 @@ body { min-height: 100vh; background: radial-gradient(ellipse at 50% 0%, rgba(10
 /* Shared vivid palette for auth and all account surfaces. */
 :root { --paper:#f5f7fb; --surface:#fff; --ink:#102a43; --muted:#516a7d; --line:#d6e1ea; --teal:#00bfa6; --teal-dark:#007f78; --teal-pale:#d9fbf4; --blue:#3b5bdb; --red:#e94f55; --red-pale:#ffe3e2; --shadow:0 20px 55px rgba(16,42,67,.14); }
 body { background: radial-gradient(circle at 12% 0%, rgba(0,191,166,.22), transparent 28rem), linear-gradient(135deg,#102a43 0%,#124c63 44%,#eaf7f3 100%); }
-.auth-main { background: transparent; }.auth-topbar { color: #fff; }.auth-brand, .auth-brand strong { color: #fff; }.auth-brand small { color: #7ff8dc; }.auth-back { border-color: rgba(255,255,255,.34); background: rgba(255,255,255,.12); color: #fff; }.auth-content { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.97); box-shadow: 0 24px 65px rgba(0,0,0,.24); }.auth-card-visual { background: linear-gradient(135deg,#00bfa6,#3b5bdb); }.auth-heading .eyebrow, .auth-group-title { color: #007f78; }.role-option { border-color: #d6e1ea; }.role-option.is-active { border-color: #00bfa6; background: linear-gradient(135deg,#e4fff8,#f2f5ff); box-shadow: inset -3px 0 #00bfa6,0 8px 20px rgba(0,191,166,.12); }.role-icon { background:#d9fbf4; color:#007f78; }.pharmacy-role-icon { background:#e7ecff; color:#3b5bdb; }.auth-mode { border-color:#c6d5e1; background:#eef4f8; }.auth-mode button.is-active { background: linear-gradient(135deg,#00bfa6,#007f78); }.field > input, .password-wrap input { border-color:#c9d8e4; }.field > input:focus, .password-wrap input:focus { border-color:#00bfa6; box-shadow:0 0 0 3px rgba(0,191,166,.14); }.submit-button { background:linear-gradient(135deg,#00bfa6,#007f78); }.submit-button:hover { background:linear-gradient(135deg,#ffc857,#f19a38); color:#102a43; }.google-button { border-color:#c9d8e4; }.auth-footer { color:#d4edf0; }.auth-footer a:hover { color:#ffc857; }.signed-in-panel { border-color:#b8d7df; background:#eaf7f3; }
+.auth-main { background: transparent; }.auth-topbar { color: #fff; }.auth-brand, .auth-brand strong { color: #fff; }.auth-brand small { color: #7ff8dc; }.auth-back { border-color: rgba(255,255,255,.34); background: rgba(255,255,255,.12); color: #fff; }.auth-content { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.97); box-shadow: 0 24px 65px rgba(0,0,0,.24); }.auth-card-visual { background: linear-gradient(135deg,#00bfa6,#3b5bdb); }.auth-heading .eyebrow, .auth-group-title { color: #007f78; }.role-option { border-color: #d6e1ea; }.role-option.is-active { border-color: #00bfa6; background: linear-gradient(135deg,#e4fff8,#f2f5ff); box-shadow: inset -3px 0 #00bfa6,0 8px 20px rgba(0,191,166,.12); }.role-icon { background:#d9fbf4; color:#007f78; }.pharmacy-role-icon { background:#e7ecff; color:#3b5bdb; }.auth-mode { border-color:#c6d5e1; background:#eef4f8; }.auth-mode button.is-active { background: linear-gradient(135deg,#00bfa6,#007f78); }.field > input, .password-wrap input { border-color:#c9d8e4; }.field > input:focus, .password-wrap input:focus { border-color:#00bfa6; box-shadow:0 0 0 3px rgba(0,191,166,.14); }.submit-button { background:linear-gradient(135deg,#00bfa6,#007f78); }.submit-button:hover { background:linear-gradient(135deg,#ffc857,#f19a38); color:#102a43; }.auth-footer { color:#d4edf0; }.auth-footer a:hover { color:#ffc857; }.signed-in-panel { border-color:#b8d7df; background:#eaf7f3; }
 
 /* Clean supplied Dawaey logo. */
 .auth-brand img { width:86px; height:90px; object-fit:contain; }.auth-brand > span { display:none; }

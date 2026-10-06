@@ -216,14 +216,6 @@ form.addEventListener("input", (event) => {
   if (event.target.name === "password") updatePasswordStrength();
 });
 
-document.querySelector(".google-button").addEventListener("click", () => {
-  if (state.role !== "patient") {
-    setMessage("تسجيل Google متاح لحساب المريض فقط. استخدم بيانات الصيدلية لتقديم طلب الفرع.");
-    return;
-  }
-  window.location.assign("/auth/google?role=patient");
-});
-
 document.querySelector(".password-toggle").addEventListener("click", (event) => {
   const input = form.elements.password;
   input.type = input.type === "password" ? "text" : "password";

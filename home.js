@@ -365,18 +365,6 @@ function setupTabs() {
   }));
 }
 
-function setupDemo() {
-  const labels = { available: ["متاح", "متوفر"], low: ["كمية قليلة", "باقي كمية محدودة"], out: ["خلص", "غير متوفر"] };
-  document.querySelectorAll("[data-demo]").forEach((button) => button.addEventListener("click", () => {
-    document.querySelectorAll("[data-demo]").forEach((item) => item.classList.toggle("is-active", item === button));
-    const [status, quantity] = labels[button.dataset.demo];
-    const statusBadge = document.querySelector("#demo-status");
-    statusBadge.textContent = status;
-    statusBadge.className = `demo-status ${button.dataset.demo === "available" ? "" : button.dataset.demo}`;
-    document.querySelector("#demo-quantity").textContent = quantity;
-  }));
-}
-
 function applyRoleVisibility() {
   const pharmacyOnly = state.user?.role === "patient";
   document.querySelectorAll("[data-pharmacy-only]").forEach((element) => {
@@ -736,7 +724,6 @@ async function start() {
   }
   applyRoleVisibility();
   setupTabs();
-  setupDemo();
   setupObservers();
   setupEvents();
   setupDonationAndAssistant();

@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, notificationTimer: null };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -473,6 +473,10 @@ function setupDonationAndAssistant() {
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
     const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
+    if (state.user?.role !== "patient") {
+      document.querySelector("#donation-results").innerHTML = '<p class="donation-saved-note">سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار عند قبول الصيدلية للتبرع. <a href="auth.html">تسجيل الدخول</a></p>';
+      return;
+    }
     renderDonationResults(medicine, area);
     try {
       const response = await fetch("/api/donations", {
@@ -717,7 +721,15 @@ async function start() {
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
       renderAccountProfile();
     }
-    if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
+    if (state.user?.role === "patient") {
+      await loadPatientData();
+      renderNotifications();
+      window.clearInterval(state.notificationTimer);
+      state.notificationTimer = window.setInterval(async () => {
+        await loadPatientData();
+        renderNotifications();
+      }, 15000);
+    }
     applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");

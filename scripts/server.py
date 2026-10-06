@@ -544,10 +544,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
                 account = connection.execute(
-                    "SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+                    "SELECT sessions.account_id, accounts.role FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
                     (token_hash, now),
                 ).fetchone()
-                account_id = account["account_id"] if account else None
+                if account and account["role"] == "patient":
+                    account_id = account["account_id"]
+            if not account_id:
+                self.send_json(401, {"error": "سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار قبول التبرع."})
+                return
             connection.execute(
                 "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",

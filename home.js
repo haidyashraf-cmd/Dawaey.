@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -197,6 +197,35 @@ function renderAreaResults(query = "") {
   }).join("");
 }
 
+async function persistSavedMedicine(key, saved) {
+  if (state.user?.role !== "patient") return;
+  const response = await fetch("/api/saved-medicines", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medicineKey: key, saved }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "تعذر حفظ الدواء.");
+}
+
+function renderNotifications() {
+  const panel = document.querySelector("#notifications-panel");
+  const count = document.querySelector("#notification-count");
+  if (!panel || !count) return;
+  const unread = state.notifications.filter((item) => !item.isRead).length;
+  count.textContent = String(unread);
+  count.hidden = unread === 0;
+  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
+}
+
+async function loadPatientData() {
+  const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
+  if (savedResponse.ok) {
+    const savedPayload = await savedResponse.json();
+    state.saved = new Set((savedPayload.medicineKeys || []).map(String));
+  }
+  if (notificationsResponse.ok) {
+    const notificationPayload = await notificationsResponse.json();
+    state.notifications = notificationPayload.notifications || [];
+  }
+}
+
 function updateSavedList() {
   const savedList = document.querySelector("#saved-list");
   const records = getRecords().filter((record) => state.saved.has(String(record["م"])));
@@ -234,6 +263,15 @@ function performSearch(query) {
   }
   state.matches = findMatches(trimmedQuery);
   const isPatient = state.user?.role === "patient";
+  if (isPatient && state.matches[0]) {
+    const searchedKey = String(state.matches[0]["م"]);
+    if (!state.saved.has(searchedKey)) {
+      state.saved.add(searchedKey);
+      persistSavedMedicine(searchedKey, true).catch((error) => showToast(error.message));
+      try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* The account database is the primary store. */ }
+      updateSavedList();
+    }
+  }
   document.querySelector("#results-title").textContent = `نتائج: ${trimmedQuery}`;
   document.querySelector("#results-summary").textContent = state.matches.length ? `لقينا ${numberFormat.format(state.matches.length)} تطابق في سجل الأصناف.${!isPatient && state.matches.length > 5 ? " عرضنا أول ٥ للزائر." : ""}` : "ملقيناش الاسم ده في الكتالوج الحالي.";
   renderMedicineResults();
@@ -542,6 +580,15 @@ function setupEvents() {
     const activate = () => { if (card.dataset.action === "search") { searchInput.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); } else if (card.dataset.action === "source") { document.querySelector("#medicine-info")?.scrollIntoView({ behavior: "smooth" }); } else { document.querySelector("#for-everyone")?.scrollIntoView({ behavior: "smooth" }); } };
     card.addEventListener("click", activate); card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(); } });
   });
+  document.querySelector("#patient-notifications")?.addEventListener("click", async () => {
+    const panel = document.querySelector("#notifications-panel");
+    const button = document.querySelector("#patient-notifications");
+    const opening = panel?.hasAttribute("hidden");
+    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
+    else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
+  });
+  document.querySelector("#assistant-fab")?.addEventListener("click", () => { const panel = document.querySelector("#dawaey-assistant"); panel.hidden = false; panel.classList.add("is-open"); document.querySelector("#assistant-fab").setAttribute("aria-expanded", "true"); document.querySelector("#assistant-input")?.focus(); });
+  document.querySelector("#assistant-close")?.addEventListener("click", () => { const panel = document.querySelector("#dawaey-assistant"); panel.hidden = true; panel.classList.remove("is-open"); document.querySelector("#assistant-fab")?.setAttribute("aria-expanded", "false"); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {
     const query = event.target.value.trim();
@@ -588,9 +635,11 @@ function setupEvents() {
     const button = event.target.closest("[data-save-medicine]");
     if (!button) return;
     const key = String(button.dataset.saveMedicine);
-    if (state.saved.has(key)) state.saved.delete(key);
-    else state.saved.add(key);
-    try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { showToast("تعذر الحفظ على الجهاز"); }
+    const nextSaved = !state.saved.has(key);
+    if (nextSaved) state.saved.add(key);
+    else state.saved.delete(key);
+    try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* Server remains the source for logged-in patients. */ }
+    persistSavedMedicine(key, nextSaved).catch((error) => showToast(error.message));
     button.setAttribute("aria-pressed", String(state.saved.has(key)));
     button.textContent = state.saved.has(key) ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي";
     updateSavedList();
@@ -598,7 +647,9 @@ function setupEvents() {
   document.querySelector("#saved-list").addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-saved]");
     if (!button) return;
-    state.saved.delete(String(button.dataset.removeSaved));
+    const key = String(button.dataset.removeSaved);
+    state.saved.delete(key);
+    persistSavedMedicine(key, false).catch((error) => showToast(error.message));
     try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* Keep this change in memory. */ }
     updateSavedList();
   });
@@ -623,6 +674,7 @@ async function start() {
       loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
     }
+    if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
     applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");
@@ -636,11 +688,16 @@ async function start() {
   try {
     const savedTheme = localStorage.getItem("dawaey-theme");
     if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-    const saved = JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]");
-    state.saved = new Set(saved.map(String));
+    const saved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String));
+    if (state.user?.role === "patient") {
+      if (!state.saved.size && saved.size) { state.saved = saved; saved.forEach((key) => persistSavedMedicine(key, true).catch(() => {})); }
+    } else {
+      state.saved = saved;
+    }
     updateSavedList();
   } catch { /* The default theme and empty list still work without storage. */ }
   if (state.user?.role === "patient") {
+    document.querySelector("#patient-notifications")?.removeAttribute("hidden");
     document.querySelector(".hero-copy h1").innerHTML = `أهلاً بيك يا ${escapeHtml(state.user.name)}<br><span>دواءك أقرب.</span>`;
   }
   showOnboarding();

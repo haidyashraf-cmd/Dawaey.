@@ -90,6 +90,23 @@ def initialize_database() -> None:
             );
             CREATE INDEX IF NOT EXISTS donation_status ON donation_requests(status);
             CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
+            CREATE TABLE IF NOT EXISTS patient_saved_medicines (
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                medicine_key TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (account_id, medicine_key)
+            );
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                related_id TEXT,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
             """
         )
 
@@ -341,6 +358,28 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
+    def authenticated_account(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
+        token = self.get_session_token()
+        if not token:
+            return None
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+        return connection.execute(
+            "SELECT accounts.* FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
+            (token_hash, int(time.time())),
+        ).fetchone()
+
+    def require_role(self, connection: sqlite3.Connection, role: str) -> sqlite3.Row | None:
+        account = self.authenticated_account(connection)
+        if not account or account["role"] != role:
+            self.send_json(403, {"error": "هذه الخدمة متاحة للحساب المناسب فقط."})
+            return None
+        if role == "pharmacy":
+            application = connection.execute("SELECT status FROM pharmacy_applications WHERE account_id = ?", (account["id"],)).fetchone()
+            if not application or application["status"] != "approved":
+                self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
+                return None
+        return account
+
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
         if route == "/healthz":
@@ -374,6 +413,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/donations":
             self.handle_donations()
             return
+        if route == "/api/saved-medicines":
+            self.handle_saved_medicines()
+            return
+        if route == "/api/notifications":
+            self.handle_notifications()
+            return
         if route == "/webhooks/whatsapp":
             self.handle_whatsapp_verification()
             return
@@ -395,13 +440,17 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/webhooks/whatsapp") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
                 self.handle_login(payload)
             elif route == "/api/donations":
                 self.handle_create_donation(payload)
+            elif route == "/api/saved-medicines":
+                self.handle_save_medicine(payload)
+            elif route == "/api/notifications/read":
+                self.handle_mark_notifications_read()
             elif route == "/api/logout":
                 self.handle_logout()
             elif route == "/webhooks/whatsapp":
@@ -445,6 +494,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def handle_donations(self) -> None:
         with closing(connect_database()) as connection:
+            if not self.require_role(connection, "pharmacy"):
+                return
             rows = connection.execute(
                 "SELECT id, medicine, area, quantity, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
@@ -490,6 +541,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             raise ValueError("حالة طلب التبرع غير صالحة.")
         now = int(time.time())
         with closing(connect_database()) as connection, connection:
+            if not self.require_role(connection, "pharmacy"):
+                return
+            previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -497,11 +551,55 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
+            if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
+                connection.execute(
+                    "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
+                    (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
+                )
             row = connection.execute(
                 "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
+
+    def handle_saved_medicines(self) -> None:
+        with closing(connect_database()) as connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            rows = connection.execute("SELECT medicine_key FROM patient_saved_medicines WHERE account_id = ? ORDER BY created_at", (account["id"],)).fetchall()
+        self.send_json(200, {"medicineKeys": [row["medicine_key"] for row in rows]})
+
+    def handle_save_medicine(self, payload: dict) -> None:
+        medicine_key = str(payload.get("medicineKey", "")).strip()
+        saved = bool(payload.get("saved"))
+        if not medicine_key or len(medicine_key) > 120:
+            raise ValueError("معرّف الدواء غير صالح.")
+        with closing(connect_database()) as connection, connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            if saved:
+                connection.execute("INSERT OR IGNORE INTO patient_saved_medicines(account_id, medicine_key, created_at) VALUES (?, ?, ?)", (account["id"], medicine_key, int(time.time())))
+            else:
+                connection.execute("DELETE FROM patient_saved_medicines WHERE account_id = ? AND medicine_key = ?", (account["id"], medicine_key))
+        self.send_json(200, {"ok": True, "saved": saved, "medicineKey": medicine_key})
+
+    def handle_notifications(self) -> None:
+        with closing(connect_database()) as connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+
+    def handle_mark_notifications_read(self) -> None:
+        with closing(connect_database()) as connection, connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            connection.execute("UPDATE notifications SET is_read = 1 WHERE account_id = ?", (account["id"],))
+        self.send_json(200, {"ok": True})
 
     def redirect_to_auth(self, error: str) -> None:
         self.send_response(302)

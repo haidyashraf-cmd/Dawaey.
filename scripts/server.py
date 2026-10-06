@@ -382,6 +382,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
+        if route in {"/", "/index.html"}:
+            with closing(connect_database()) as connection:
+                if not self.authenticated_account(connection):
+                    self.send_response(302)
+                    self.send_header("Location", "/auth.html")
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return
         if route == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")

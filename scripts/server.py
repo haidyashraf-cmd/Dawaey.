@@ -9,6 +9,10 @@ import re
 import secrets
 import sqlite3
 import sys
+import csv
+import io
+import zipfile
+import xml.etree.ElementTree as ET
 import threading
 import time
 import urllib.parse
@@ -107,6 +111,15 @@ def initialize_database() -> None:
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
+            CREATE TABLE IF NOT EXISTS pharmacy_imports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                source_name TEXT NOT NULL,
+                row_order INTEGER NOT NULL,
+                row_json TEXT NOT NULL,
+                imported_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS pharmacy_imports_account ON pharmacy_imports(account_id, row_order);
             """
         )
 
@@ -448,6 +461,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
+            if route == "/api/pharmacy/import":
+                self.handle_pharmacy_import()
+                return
             payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
@@ -672,6 +688,108 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.log_error("Google OAuth failed: %s", error)
             self.redirect_to_auth("تعذر تسجيل الدخول باستخدام Google. تأكد من إعداد OAuth وحاول مرة أخرى.")
 
+    def _import_rows_from_csv(self, raw: bytes) -> list[dict]:
+        text = raw.decode("utf-8-sig", errors="replace")
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        rows = list(csv.DictReader(io.StringIO(text), dialect=dialect))
+        return [{str(key or "").strip(): str(value or "").strip() for key, value in row.items() if key is not None and str(key).strip()} for row in rows]
+
+    def _import_rows_from_xlsx(self, raw: bytes) -> list[dict]:
+        with zipfile.ZipFile(io.BytesIO(raw)) as workbook:
+            shared = []
+            if "xl/sharedStrings.xml" in workbook.namelist():
+                root = ET.fromstring(workbook.read("xl/sharedStrings.xml"))
+                shared = ["".join(node.itertext()) for node in root.findall(".//{*}si")]
+            workbook_root = ET.fromstring(workbook.read("xl/workbook.xml"))
+            rels = ET.fromstring(workbook.read("xl/_rels/workbook.xml.rels"))
+            rel_map = {rel.attrib.get("Id"): rel.attrib.get("Target", "") for rel in rels}
+            sheet = workbook_root.find(".//{*}sheet")
+            if sheet is None: return []
+            rid = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            target = rel_map.get(rid, "worksheets/sheet1.xml")
+            target = target.lstrip("/")
+            if not target.startswith("xl/"): target = "xl/" + target
+            root = ET.fromstring(workbook.read(target))
+            matrix = []
+            for row in root.findall(".//{*}sheetData/{*}row"):
+                cells = {}
+                for cell in row.findall("{*}c"):
+                    ref = cell.attrib.get("r", "A1")
+                    col = "".join(character for character in ref if character.isalpha())
+                    value = cell.find("{*}v")
+                    text = "" if value is None else value.text or ""
+                    if cell.attrib.get("t") == "s" and text.isdigit() and int(text) < len(shared): text = shared[int(text)]
+                    if cell.attrib.get("t") == "inlineStr": text = "".join(cell.itertext())
+                    cells[col] = text
+                matrix.append(cells)
+            if not matrix: return []
+            columns = []
+            for index in range(max((len(row) for row in matrix), default=0)):
+                number = index + 1; label = ""
+                while number:
+                    number, remainder = divmod(number - 1, 26); label = chr(65 + remainder) + label
+                columns.append(label)
+            headers = [str(matrix[0].get(col, "")).strip() or f"عمود {index + 1}" for index, col in enumerate(columns)]
+            return [{headers[index]: str(row.get(col, "")).strip() for index, col in enumerate(columns) if str(row.get(col, "")).strip()} for row in matrix[1:] if any(str(value).strip() for value in row.values())]
+
+    def _parse_pharmacy_upload(self) -> tuple[str, bytes]:
+        content_type = self.headers.get("Content-Type", "")
+        match = re.search(r"boundary=([^;]+)", content_type)
+        if not match: raise ValueError("ارفع ملف Excel أو CSV من النموذج.")
+        boundary = match.group(1).strip().strip('"').encode()
+        length = int(self.headers.get("Content-Length", "0"))
+        if length < 1 or length > 8 * 1024 * 1024: raise ValueError("حجم الملف يجب ألا يتجاوز 8 ميجابايت.")
+        body = self.rfile.read(length)
+        for part in body.split(b"--" + boundary):
+            if b"Content-Disposition" not in part or b"filename=" not in part: continue
+            header, _, data = part.partition(b"\r\n\r\n")
+            filename_match = re.search(rb'filename="([^"]*)"', header)
+            filename = (filename_match.group(1).decode("utf-8", errors="replace") if filename_match else "").strip()
+            data = data.rstrip(b"\r\n-")
+            return filename, data
+        raise ValueError("لم يتم العثور على ملف في الطلب.")
+
+    @staticmethod
+    def _normalize_import_row(row: dict) -> dict:
+        aliases = {
+            "اسم الصنف": "اسم الدواء", "الدواء": "اسم الدواء", "medicine": "اسم الدواء", "name": "اسم الدواء",
+            "كود الدواء": "الكود", "code": "الكود", "sku": "الكود",
+            "الكمية": "الكمية الحالية", "الكمية المتاحة": "الكمية الحالية", "quantity": "الكمية الحالية", "stock": "الكمية الحالية",
+            "الحد الادنى": "الحد الأدنى", "حد الطلب": "الحد الأدنى", "minimum": "الحد الأدنى",
+            "الوحدة": "وحدة القياس", "unit": "وحدة القياس", "الفئة": "طبيعة الدواء", "category": "طبيعة الدواء",
+        }
+        normalized = {}
+        for key, value in row.items():
+            clean_key = str(key or "").strip()
+            target = aliases.get(clean_key.casefold(), aliases.get(clean_key, clean_key))
+            normalized[target] = str(value or "").strip()
+        return normalized
+
+    def handle_pharmacy_import(self) -> None:
+        with closing(connect_database()) as connection:
+            account = self.require_role(connection, "pharmacy")
+            if not account: return
+            filename, raw = self._parse_pharmacy_upload()
+            suffix = Path(filename).suffix.lower()
+            try:
+                if suffix == ".csv": rows = self._import_rows_from_csv(raw)
+                elif suffix in {".xlsx", ".xlsm"}: rows = self._import_rows_from_xlsx(raw)
+                else: raise ValueError("الصيغة المدعومة هي Excel (.xlsx) أو CSV فقط.")
+            except (zipfile.BadZipFile, ET.ParseError, KeyError) as error:
+                raise ValueError("ملف Excel غير صالح أو تالف.") from error
+            rows = [self._normalize_import_row(row) for row in rows if row]
+            if not rows: raise ValueError("الملف لا يحتوي على صفوف بيانات.")
+            if len(rows) > 5000: raise ValueError("الملف يجب ألا يتجاوز 5000 صف.")
+            now = int(time.time())
+            with connection:
+                connection.execute("DELETE FROM pharmacy_imports WHERE account_id = ?", (account["id"],))
+                connection.executemany("INSERT INTO pharmacy_imports(account_id, source_name, row_order, row_json, imported_at) VALUES (?, ?, ?, ?, ?)", [(account["id"], filename, index, json.dumps(row, ensure_ascii=False), now) for index, row in enumerate(rows)])
+            self.send_json(200, {"sourceName": filename, "rows": rows, "count": len(rows), "message": f"تم استيراد {len(rows)} صف من الملف بنجاح."})
+
     def handle_pharmacy_bootstrap(self) -> None:
         token = self.get_session_token()
         if not token:
@@ -687,9 +805,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not application or application["status"] != "approved":
                 self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
                 return
-        self.handle_bootstrap()
+        self.handle_bootstrap(account_id=account["id"])
 
-    def handle_bootstrap(self) -> None:
+    def handle_bootstrap(self, account_id: int | None = None) -> None:
         try:
             workbook = json.loads(DATA_PATH.read_text(encoding="utf-8"))
             sheets = workbook["sheets"]
@@ -701,7 +819,21 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 {**item, **supply_by_number.get(str(item.get("م")), {})}
                 for item in inventory
             ]
-            self.send_json(200, {"source": workbook.get("source", ""), "catalog": catalog, "pharmacies": pharmacies, "sheets": sheets})
+            imported = []
+            with closing(connect_database()) as connection:
+                if account_id is None:
+                    stored_rows = connection.execute("SELECT row_json, account_id FROM pharmacy_imports ORDER BY account_id, row_order").fetchall()
+                else:
+                    stored_rows = connection.execute("SELECT row_json, account_id FROM pharmacy_imports WHERE account_id = ? ORDER BY row_order", (account_id,)).fetchall()
+                imported = [(json.loads(row["row_json"]), row["account_id"]) for row in stored_rows]
+            for index, (row, owner_id) in enumerate(imported, 1):
+                normalized = dict(row)
+                normalized.setdefault("م", f"import-{owner_id}-{index}")
+                normalized.setdefault("مصدر البيانات", "ملف الصيدلية")
+                catalog.append(normalized)
+            if imported: sheets["الاصناف والكميات"] = catalog
+            source = workbook.get("source", "") + (" · مع ملف الصيدلية المرفوع" if imported else "")
+            self.send_json(200, {"source": source, "catalog": catalog, "pharmacies": pharmacies, "sheets": sheets, "importedCount": len(imported)})
         except (OSError, json.JSONDecodeError, KeyError) as error:
             self.send_json(503, {"error": "بيانات المصدر غير متاحة حاليًا."})
             self.log_error("Could not load workbook data: %s", error)

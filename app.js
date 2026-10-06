@@ -253,11 +253,43 @@ function updateInventoryResults() {
   if (count) count.textContent = `${formatNumber(results.length)} نتيجة`;
 }
 
+async function importPharmacyFile() {
+  const form = document.querySelector("#pharmacy-import-form");
+  const input = document.querySelector("#pharmacy-import-file");
+  const status = document.querySelector("#pharmacy-import-status");
+  const file = input?.files?.[0];
+  if (!file) return;
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
+  status.textContent = "جاري قراءة الملف وحفظ البيانات...";
+  status.className = "import-status is-loading";
+  try {
+    const response = await fetch("/api/pharmacy/import", { method: "POST", credentials: "same-origin", body: (() => { const data = new FormData(); data.append("file", file, file.name); return data; })() });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "تعذر استيراد الملف.");
+    const latest = await loadDashboardData();
+    state.data = latest;
+    state.inventoryQuery = "";
+    state.inventoryPage = 0;
+    status.textContent = payload.message || `تم استيراد ${payload.count} صف.`;
+    status.className = "import-status is-success";
+    renderInventory();
+    showToast(status.textContent);
+  } catch (error) {
+    status.textContent = error.message || "تعذر استيراد الملف.";
+    status.className = "import-status is-error";
+  } finally {
+    button.disabled = false;
+    input.value = "";
+  }
+}
+
 function renderInventory() {
   const allCategories = getCategoryCounts().map(([category]) => category);
   const quickCategories = ["الكل", ...allCategories.slice(0, 5)];
   content.innerHTML = `
     ${pageHeading("الأدوية والمخزون", "ابحث في الأصناف المسجلة وراجع حالة المخزون وحدود التوريد.", "كتالوج دوائي")}
+    <section class="panel import-panel"><div><span class="panel-kicker">استيراد سريع</span><h2>ارفع ملف مخزون الصيدلية</h2><p>ارفع ملف Excel أو CSV، وستظهر صفوفه فورًا في لوحة المخزون ونتائج الموقع.</p></div><form id="pharmacy-import-form" class="import-form"><label class="file-picker"><span>اختيار ملف</span><input id="pharmacy-import-file" type="file" accept=".xlsx,.xlsm,.csv" required></label><button class="primary-button" type="submit">رفع وتشغيل البيانات</button></form><small class="import-hint">الصيغ المدعومة: .xlsx و .csv · حد أقصى 8 ميجابايت و5000 صف</small><p id="pharmacy-import-status" class="import-status" aria-live="polite"></p></section>
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="inventory-search" type="search" value="${escapeHtml(state.inventoryQuery)}" placeholder="اسم الدواء، الكود، أو الفئة" autocomplete="off" aria-label="ابحث في الأدوية"></label><span class="toolbar-meta">الكمية حسب ملف الأصناف والتوريد</span></div>
     <div class="filter-row" aria-label="تصفية حسب الفئة والحالة">
       ${quickCategories.map((category) => `<button class="filter-chip ${state.inventoryCategory === category ? "is-active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
@@ -569,6 +601,11 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-retry]")) startApp();
 });
 
+document.addEventListener("submit", (event) => {
+  if (!event.target.matches("#pharmacy-import-form")) return;
+  event.preventDefault();
+  importPharmacyFile();
+});
 document.addEventListener("input", (event) => {
   if (event.target.id === "inventory-search") {
     state.inventoryQuery = event.target.value;

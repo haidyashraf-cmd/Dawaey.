@@ -130,8 +130,9 @@ def update_pharmacy_application(account_id: int, status: str) -> bool:
 def send_telegram_notification(account_id: int, details: dict) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id:
-        return
+    missing = [name for name, value in (("TELEGRAM_BOT_TOKEN", token), ("TELEGRAM_CHAT_ID", chat_id)) if not value]
+    if missing:
+        raise RuntimeError(f"Telegram configuration is missing: {', '.join(missing)}")
     text = ("طلب تسجيل صيدلية جديد\n\n"
             f"الصيدلية: {details['pharmacyName']}\n"
             f"المسؤول: {details['pharmacistName']}\n"
@@ -165,12 +166,16 @@ def send_whatsapp_notification(account_id: int, details: dict) -> None:
     external_json_request(f"https://graph.facebook.com/v23.0/{phone_id}/messages", payload, {"Authorization": f"Bearer {token}"})
 
 
-def notify_pharmacy_application(account_id: int, details: dict) -> None:
+def notify_pharmacy_application(account_id: int, details: dict) -> bool:
+    telegram_sent = False
     for sender in (send_telegram_notification, send_whatsapp_notification):
         try:
             sender(account_id, details)
+            if sender is send_telegram_notification:
+                telegram_sent = True
         except Exception as error:
             print(f"Notification failed ({sender.__name__}): {error}", file=sys.stderr)
+    return telegram_sent
 
 
 def handle_approval_callback(callback_data: str) -> str | None:
@@ -714,8 +719,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp),
             )
-        notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
-        self.send_json(202, {"status": "pending", "message": "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة."})
+        telegram_sent = notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
+        message = "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة." if telegram_sent else "تم حفظ طلب الصيدلية، لكن تعذر إرسال إشعار تيليجرام. راجع إعدادات Telegram في Railway."
+        self.send_json(202, {"status": "pending", "telegramSent": telegram_sent, "message": message})
 
     def handle_login(self, payload: dict) -> None:
         _, contact_key = normalize_contact(payload.get("contact"))

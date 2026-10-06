@@ -443,12 +443,12 @@ function assistantReply(question) {
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
 
   const advice = [
-    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol" },
-    { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة" },
-    { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام" },
+    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
+    { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
+    { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام", catalogNames: ["cetirizine", "loratadine", "claritine", "claritin", "telfast"] },
     { words: ["حموضه", "حرقان", "ارتجاع", "معدة", "المعدة"], category: "حموضة أو ارتجاع", options: "يمكن سؤال الصيدلي عن أدوية الحموضة مثل أوميبرازول أو مضاد حموضة مناسب" },
     { words: ["كحه", "كحة", "بلغم", "سعال"], category: "كحة أو سعال", options: "اسأل الصيدلي عن علاج مناسب حسب كون الكحة جافة أو مصحوبة ببلغم؛ لا تستخدم مضادًا حيويًا من نفسك" },
-    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن"], category: "مغص أو تقلصات", options: "يمكن سؤال الصيدلي عن مضاد للتقلصات، لكن ألم البطن المستمر يحتاج تقييم السبب أولًا" },
+    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن"], category: "مغص أو تقلصات", options: "اسأل الصيدلي عن دواء مناسب لمضاد التقلصات، لكن ألم البطن المستمر يحتاج تقييم السبب أولًا", catalogNames: [] },
     { words: ["التهاب حلق", "زور", "حلق", "الم حلق", "ألم حلق"], category: "ألم أو التهاب الحلق", options: "يمكن سؤال الصيدلي عن أقراص استحلاب ومسكن مناسب، ولا تبدأ مضادًا حيويًا دون كشف" },
     { words: ["غثيان", "ترجيع", "قيء"], category: "غثيان أو قيء", options: "اسأل الصيدلي عن خيار مناسب، واهتم بالسوائل؛ القيء المتكرر أو المصحوب بدم يحتاج طوارئ" },
     { words: ["اسهال", "إسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
@@ -458,7 +458,7 @@ function assistantReply(question) {
     const tokens = matched.options.split(/مثل|أو|،/).map((token) => normalize(token)).filter((token) => token.length > 3);
     const catalog = getRecords().filter((record) => {
       const text = `${normalize(record["اسم الدواء"])} ${normalize(record["طبيعة الدواء"])} ${normalize(record["المادة الفعالة"])}`;
-      return text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
+      return (matched.catalogNames || []).some((name) => text.includes(normalize(name))) || text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
     const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
     return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>اقتراح مبدئي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;

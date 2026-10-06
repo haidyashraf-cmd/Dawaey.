@@ -472,9 +472,7 @@ function setTheme(theme) {
 }
 
 async function loadDashboardData() {
-  const localResponse = await fetch("data/dawaey-data.json");
-  if (localResponse.ok) return localResponse.json();
-  const apiResponse = await fetch("/api/bootstrap", { credentials: "same-origin" });
+  const apiResponse = await fetch("/api/pharmacy/bootstrap", { credentials: "same-origin" });
   const payload = await apiResponse.json();
   if (!apiResponse.ok) throw new Error(payload.error || "تعذر تحميل بيانات لوحة الصيدلية");
   if (payload.sheets) return { source: payload.source, sheets: payload.sheets };

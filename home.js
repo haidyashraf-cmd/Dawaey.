@@ -535,7 +535,7 @@ async function logoutFromProfile() {
     document.querySelector("#account-profile").hidden = true;
     renderAccountProfile();
     updateSavedList();
-    showToast("تم تسجيل الخروج بنجاح");
+    window.location.href = "auth.html";
   } catch (error) {
     showToast(error.message || "تعذر تسجيل الخروج.");
   }

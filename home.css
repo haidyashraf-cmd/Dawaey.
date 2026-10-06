@@ -475,8 +475,8 @@ body { background: var(--paper); }
 
 
 /* Assistant is a full page section opened from the top navigation. */
-.main-nav a[href="#dawaey-assistant"] { color: #e94f55; font-weight: 800; }
-.main-nav a[href="#dawaey-assistant"]::after { background: #e94f55; }
+.main-nav a[href="#dawaey-assistant"] { color: var(--muted); font-weight: 600; }
+.main-nav a[href="#dawaey-assistant"]::after { background: var(--muted); }
 .assistant-section { display: block; }
 
 /* Patient entry points lead to the account page; assistant follows it in the navigation. */

@@ -191,7 +191,10 @@ form.addEventListener("submit", async (event) => {
       setMessage(response.message, "success");
     } else {
       const response = await requestApi(state.mode === "register" ? "register" : "login", state.mode === "register" ? { ...payload, privacyAccepted: payload.privacyAccepted } : { role: state.role, contact: payload.contact, password: payload.password });
-      if (response.user) window.location.assign("index.html?welcome=1#top");
+      if (response.user) {
+        showAccount(response.user);
+        setMessage(state.mode === "register" ? "تم إنشاء حساب المريض وتسجيل الدخول بنجاح." : "تم تسجيل الدخول بنجاح.", "success");
+      }
     }
   } catch (error) {
     setMessage(error.message || "حصلت مشكلة في الاتصال. جرّب تاني.");

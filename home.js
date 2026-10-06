@@ -218,7 +218,11 @@ async function loadPatientData() {
   const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
   if (savedResponse.ok) {
     const savedPayload = await savedResponse.json();
-    state.saved = new Set((savedPayload.medicineKeys || []).map(String));
+    const serverSaved = new Set((savedPayload.medicineKeys || []).map(String));
+    let localSaved = new Set();
+    try { localSaved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String)); } catch { /* The server list remains available. */ }
+    state.saved = new Set([...serverSaved, ...localSaved]);
+    for (const key of localSaved) if (!serverSaved.has(key)) persistSavedMedicine(key, true).catch(() => {});
   }
   if (notificationsResponse.ok) {
     const notificationPayload = await notificationsResponse.json();
@@ -263,13 +267,14 @@ function performSearch(query) {
   }
   state.matches = findMatches(trimmedQuery);
   const isPatient = state.user?.role === "patient";
-  if (isPatient && state.matches[0]) {
+  if (state.matches[0]) {
     const searchedKey = String(state.matches[0]["م"]);
     if (!state.saved.has(searchedKey)) {
       state.saved.add(searchedKey);
-      persistSavedMedicine(searchedKey, true).catch((error) => showToast(error.message));
       try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* The account database is the primary store. */ }
+      if (isPatient) persistSavedMedicine(searchedKey, true).catch((error) => showToast(error.message));
       updateSavedList();
+      showToast(`تم حفظ ${state.matches[0]["اسم الدواء"]} في أدويتي`);
     }
   }
   document.querySelector("#results-title").textContent = `نتائج: ${trimmedQuery}`;
@@ -587,8 +592,7 @@ function setupEvents() {
     if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
-  document.querySelector("#assistant-fab")?.addEventListener("click", () => { const panel = document.querySelector("#dawaey-assistant"); panel.hidden = false; panel.classList.add("is-open"); document.querySelector("#assistant-fab").setAttribute("aria-expanded", "true"); document.querySelector("#assistant-input")?.focus(); });
-  document.querySelector("#assistant-close")?.addEventListener("click", () => { const panel = document.querySelector("#dawaey-assistant"); panel.hidden = true; panel.classList.remove("is-open"); document.querySelector("#assistant-fab")?.setAttribute("aria-expanded", "false"); });
+  document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {
     const query = event.target.value.trim();
@@ -673,6 +677,7 @@ async function start() {
     if (loginLink && state.user) {
       loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
+      loginLink.href = "#my-medicines";
     }
     if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
     applyRoleVisibility();

@@ -480,5 +480,13 @@ body { background: var(--paper); }
 .assistant-section { display: block; }
 
 /* Patient entry points lead to the account page; assistant follows it in the navigation. */
-.main-nav a.patient-login-link { color: var(--teal-deep); font-weight: 800; }
-.main-nav a.patient-login-link:hover { color: var(--teal); }
+.main-nav a.patient-login-link { color: var(--muted); font-weight: 600; }
+.main-nav a.patient-login-link:hover { color: var(--teal-deep); }
+.account-profile { position: absolute; z-index: 30; top: calc(100% + 10px); inset-inline-end: 0; display: grid; min-width: 220px; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); color: var(--ink); }
+.account-profile[hidden] { display: none; }
+.header-actions { position: relative; }
+.account-profile strong { font-size: 12px; }
+.account-profile span, .account-profile small { color: var(--muted); font-size: 10px; }
+.account-profile small { color: var(--teal-deep); font-weight: 700; }
+.account-profile a, .account-profile button { min-height: 32px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--teal-deep); font: inherit; font-size: 10px; text-align: center; text-decoration: none; cursor: pointer; }
+.account-profile button { border-color: #e94f55; color: #c93642; }

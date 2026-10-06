@@ -505,7 +505,58 @@ function setupDonationAndAssistant() {
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));
 }
 
+function renderAccountProfile() {
+  const profile = document.querySelector("#account-profile");
+  const loginLink = document.querySelector(".login-link");
+  if (!profile || !loginLink) return;
+  if (!state.user) {
+    profile.hidden = true;
+    loginLink.textContent = "دخول / حساب جديد";
+    loginLink.href = "auth.html";
+    loginLink.removeAttribute("aria-expanded");
+    return;
+  }
+  document.querySelector("#profile-name").textContent = state.user.name || "المستخدم";
+  document.querySelector("#profile-role").textContent = state.user.role === "pharmacy" ? "حساب صيدلية" : "حساب مريض";
+  document.querySelector("#profile-status").textContent = state.user.role === "pharmacy" ? "الحساب مسجل وينتظر المراجعة" : "الحساب مسجل الدخول";
+  loginLink.textContent = state.user.name || "حسابي";
+  loginLink.href = "#account-profile";
+  loginLink.setAttribute("aria-expanded", String(!profile.hidden));
+}
+
+async function logoutFromProfile() {
+  try {
+    const response = await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+    if (!response.ok) throw new Error("تعذر تسجيل الخروج.");
+    state.user = null;
+    state.notifications = [];
+    state.saved = new Set();
+    document.querySelector("#patient-notifications")?.setAttribute("hidden", "");
+    document.querySelector("#account-profile").hidden = true;
+    renderAccountProfile();
+    updateSavedList();
+    showToast("تم تسجيل الخروج بنجاح");
+  } catch (error) {
+    showToast(error.message || "تعذر تسجيل الخروج.");
+  }
+}
+
 function setupEvents() {
+  const loginLink = document.querySelector(".login-link");
+  const profile = document.querySelector("#account-profile");
+  loginLink?.addEventListener("click", (event) => {
+    if (!state.user) return;
+    event.preventDefault();
+    profile.hidden = !profile.hidden;
+    loginLink.setAttribute("aria-expanded", String(!profile.hidden));
+  });
+  document.querySelector("#profile-logout")?.addEventListener("click", logoutFromProfile);
+  document.addEventListener("click", (event) => {
+    if (state.user && !event.target.closest("#account-profile, .login-link")) {
+      profile.hidden = true;
+      loginLink.setAttribute("aria-expanded", "false");
+    }
+  });
   document.querySelector("#medicine-search-form").addEventListener("submit", (event) => { event.preventDefault(); performSearch(searchInput.value); });
   document.querySelector("#web-search-arabic")?.addEventListener("click", () => {
     const query = searchInput.value.trim();
@@ -675,9 +726,8 @@ async function start() {
     renderAreaResults();
     const loginLink = document.querySelector(".login-link");
     if (loginLink && state.user) {
-      loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
-      loginLink.href = "#my-medicines";
+      renderAccountProfile();
     }
     if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
     applyRoleVisibility();

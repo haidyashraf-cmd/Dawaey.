@@ -25,6 +25,8 @@ DATA_PATH = ROOT / "data" / "dawaey-data.json"
 DATABASE_PATH = Path(os.environ.get("DAWAEY_DATABASE", ROOT / "data" / "dawaey-users.sqlite3"))
 SESSION_COOKIE = "dawaey_session"
 SESSION_SECONDS = 60 * 60 * 24 * 14
+OAUTH_STATE_COOKIE = "dawaey_google_state"
+OAUTH_STATE_SECONDS = 600
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
 LAST_GEOCODE_REQUEST = 0.0
@@ -245,6 +247,28 @@ def public_account(connection: sqlite3.Connection, account: sqlite3.Row) -> dict
     return result
 
 
+def oauth_state_cookie(state: str) -> str:
+    secure = os.environ.get("DAWAEY_SECURE_COOKIE") == "1"
+    suffix = "; Secure" if secure else ""
+    return f"{OAUTH_STATE_COOKIE}={state}; HttpOnly; SameSite=Lax; Path=/; Max-Age={OAUTH_STATE_SECONDS}{suffix}"
+
+
+def expired_oauth_state_cookie() -> str:
+    secure = os.environ.get("DAWAEY_SECURE_COOKIE") == "1"
+    suffix = "; Secure" if secure else ""
+    return f"{OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{suffix}"
+
+
+def get_cookie_value(handler, name: str) -> str | None:
+    cookie = SimpleCookie()
+    try:
+        cookie.load(handler.headers.get("Cookie", ""))
+    except Exception:
+        return None
+    morsel = cookie.get(name)
+    return morsel.value if morsel else None
+
+
 def google_redirect_uri(handler) -> str:
     base = os.environ.get("DAWAEY_PUBLIC_URL", "").strip().rstrip("/")
     if not base:
@@ -338,6 +362,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         if route == "/api/session":
             self.handle_session()
+            return
+        if route == "/api/pharmacy/bootstrap":
+            self.handle_pharmacy_bootstrap()
             return
         if route == "/api/donations":
             self.handle_donations()
@@ -482,9 +509,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.redirect_to_auth("تسجيل Google غير مفعّل بعد؛ أضف إعدادات Google OAuth في الخادم.")
             return
         redirect_uri = google_redirect_uri(self)
-        query = urlencode({"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": "openid email profile", "access_type": "online", "prompt": "select_account"})
+        state = secrets.token_urlsafe(32)
+        query = urlencode({"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": "openid email profile", "state": state, "access_type": "online", "prompt": "select_account"})
         self.send_response(302)
         self.send_header("Location", f"https://accounts.google.com/o/oauth2/v2/auth?{query}")
+        self.send_header("Set-Cookie", oauth_state_cookie(state))
         self.end_headers()
 
     def handle_google_callback(self) -> None:
@@ -493,6 +522,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.redirect_to_auth("تم إلغاء تسجيل الدخول باستخدام Google.")
             return
         code = parameters.get("code", [""])[0]
+        state = parameters.get("state", [""])[0]
+        expected_state = get_cookie_value(self, OAUTH_STATE_COOKIE)
+        if not state or not expected_state or not hmac.compare_digest(state, expected_state):
+            self.redirect_to_auth("انتهت جلسة Google الآمنة. ابدأ تسجيل الدخول من جديد.")
+            return
         client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
         client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
         if not code or not client_id or not client_secret:
@@ -514,17 +548,35 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     password = secrets.token_urlsafe(32)
                     cursor = connection.execute("INSERT INTO accounts(role, full_name, contact, contact_key, password_salt, password_hash, created_at) VALUES ('patient', ?, ?, ?, ?, ?, ?)", (name, email, email, salt.hex(), password_digest(password, salt).hex(), int(time.time())))
                     account_id = cursor.lastrowid
-                    connection.execute("INSERT INTO patient_profiles(account_id, governorate, district) VALUES (?, ?, ?)", ("غير محدد", "غير محدد"))
+                    connection.execute("INSERT INTO patient_profiles(account_id, governorate, district) VALUES (?, ?, ?)", (account_id, "غير محدد", "غير محدد"))
                     account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
                 token = create_session(connection, account["id"])
                 cookie = self.session_cookie(token)
             self.send_response(302)
             self.send_header("Location", "/index.html?welcome=1#top")
             self.send_header("Set-Cookie", cookie)
+            self.send_header("Set-Cookie", expired_oauth_state_cookie())
             self.end_headers()
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as error:
             self.log_error("Google OAuth failed: %s", error)
             self.redirect_to_auth("تعذر تسجيل الدخول باستخدام Google. تأكد من إعداد OAuth وحاول مرة أخرى.")
+
+    def handle_pharmacy_bootstrap(self) -> None:
+        token = self.get_session_token()
+        if not token:
+            self.send_json(401, {"error": "يجب تسجيل الدخول بحساب صيدلية معتمد."})
+            return
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+        with closing(connect_database()) as connection:
+            account = connection.execute("SELECT * FROM accounts JOIN sessions ON sessions.account_id = accounts.id WHERE sessions.token_hash = ? AND sessions.expires_at > ?", (token_hash, int(time.time()))).fetchone()
+            if not account or account["role"] != "pharmacy":
+                self.send_json(403, {"error": "لوحة الصيدلية متاحة لحسابات الصيدليات فقط."})
+                return
+            application = connection.execute("SELECT status FROM pharmacy_applications WHERE account_id = ?", (account["id"],)).fetchone()
+            if not application or application["status"] != "approved":
+                self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
+                return
+        self.handle_bootstrap()
 
     def handle_bootstrap(self) -> None:
         try:

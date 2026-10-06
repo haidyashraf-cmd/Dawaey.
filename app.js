@@ -502,6 +502,20 @@ async function startApp() {
   }
 }
 document.addEventListener("click", (event) => {
+  const logoutButton = event.target.closest("#pharmacy-logout-button");
+  if (logoutButton) {
+    logoutButton.disabled = true;
+    fetch("/api/logout", { method: "POST", credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) throw new Error("تعذر تسجيل الخروج");
+        window.location.replace("auth.html?role=pharmacy&logged_out=1");
+      })
+      .catch((error) => {
+        logoutButton.disabled = false;
+        showToast(error.message || "تعذر تسجيل الخروج");
+      });
+    return;
+  }
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) {
     event.preventDefault();

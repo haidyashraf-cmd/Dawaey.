@@ -106,6 +106,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .logout-item .nav-icon { color: #ffb35f; font-size: 20px; }
 .logout-item:hover { border-color: rgba(255, 122, 89, .7); background: rgba(233, 79, 85, .2); color: #fff; }
 .logout-item:disabled { opacity: .55; cursor: wait; }
+.topbar-logout { min-height: 34px; padding: 0 13px; border: 1px solid #e94f55; border-radius: 8px; background: #ffe4e8; color: #c93642; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 800; }
+.topbar-logout:hover { background: #e94f55; color: #fff; }
+.topbar-logout:disabled, .mobile-logout:disabled { opacity: .55; cursor: wait; }
+.mobile-logout { color: #c93642 !important; }
 
 .main-area { min-height: 100vh; margin-inline-start: 250px; }
 .topbar { position: sticky; z-index: 8; top: 0; display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 16px; padding: 0 36px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--canvas) 92%, transparent); backdrop-filter: blur(16px); }

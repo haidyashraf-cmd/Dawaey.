@@ -107,7 +107,7 @@ function showAccount(user) {
   document.querySelector(".auth-mode").hidden = true;
   const panel = document.querySelector("#signed-in-panel");
   const isPharmacy = user.role === "pharmacy";
-  if (isPharmacy && user.status === "approved") {
+  if (isPharmacy) {
     window.location.replace("pharmacy.html");
     return;
   }

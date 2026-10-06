@@ -15,6 +15,7 @@ const sectionNames = {
 
 const state = {
   data: null,
+  user: null,
   view: "overview",
   inventoryQuery: "",
   inventoryCategory: "الكل",
@@ -147,13 +148,14 @@ function renderOverview() {
     .sort((left, right) => numericValue(right["كمية التوريد المقترحة"]) - numericValue(left["كمية التوريد المقترحة"]))
     .slice(0, 5);
   const pharmacyRows = pharmacies.slice(0, 5);
+  const pharmacyName = state.user?.pharmacyName || "الصيدلية";
 
   content.innerHTML = `
     <section class="welcome-panel">
       <div class="welcome-copy">
-        <span class="eyebrow welcome-accent">صباحك أهدى مع دوائي</span>
-        <h1>خلّي كل معلومة عن الدواء <span class="welcome-accent">في مكانها.</span></h1>
-        <p>ابحث في الأصناف، راجع كميات المخزون، أو اعثر على بيانات التواصل للصيدليات.</p>
+        <span class="eyebrow welcome-accent">أهلاً بك في لوحة الصيدلية</span>
+        <h1>مرحبًا <span class="welcome-accent">${escapeHtml(pharmacyName)}</span></h1>
+        <p>راجع المخزون، تابع التوريد، وأدر طلبات التبرع الخاصة بصيدليتك من مكان واحد.</p>
       </div>
       <form class="welcome-search" id="hero-search">
         ${searchIcon()}
@@ -489,6 +491,7 @@ async function startApp() {
       content.innerHTML = `<section class="panel empty-state access-denied"><strong>لوحة الصيدلية مخصصة للصيدليات المعتمدة فقط</strong><p>سجّل دخولك بحساب صيدلية معتمد أو قدّم طلب تسجيل من صفحة الحسابات.</p><a class="filter-chip" href="auth.html">تسجيل دخول الصيدلية</a></section>`;
       return;
     }
+    state.user = user;
     const [data] = await Promise.all([loadDashboardData(), loadDonations()]);
     state.data = data;
     showView("overview", false);

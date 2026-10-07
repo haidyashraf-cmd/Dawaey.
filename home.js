@@ -665,6 +665,10 @@ function setupEvents() {
     if (opening) {
       panel?.removeAttribute("hidden");
       button?.setAttribute("aria-expanded", "true");
+      if (state.user?.role === "patient") {
+        await loadPatientData();
+        renderNotifications();
+      }
       await markNotificationsRead();
     } else {
       panel?.setAttribute("hidden", "");
@@ -775,7 +779,7 @@ async function start() {
         await loadPatientData();
         renderNotifications();
       };
-      state.notificationTimer = window.setInterval(refreshPatientNotifications, 3000);
+      state.notificationTimer = window.setInterval(refreshPatientNotifications, 1000);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshPatientNotifications();
       });

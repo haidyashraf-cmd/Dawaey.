@@ -261,7 +261,13 @@ async function importPharmacyFile() {
   const input = document.querySelector("#pharmacy-import-file");
   const status = document.querySelector("#pharmacy-import-status");
   const file = input?.files?.[0];
-  if (!file) return;
+  if (!file) {
+    if (status) {
+      status.textContent = "اختار ملف Excel بصيغة .xlsx أو ملف CSV أولًا.";
+      status.className = "import-status is-error";
+    }
+    return;
+  }
   const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   status.textContent = "جاري قراءة الملف وحفظ البيانات...";
@@ -274,10 +280,14 @@ async function importPharmacyFile() {
     state.data = latest;
     state.inventoryQuery = "";
     state.inventoryPage = 0;
-    status.textContent = payload.message || `تم استيراد ${payload.count} صف.`;
-    status.className = "import-status is-success";
+    const successMessage = payload.message || `تم استيراد ${payload.count} صف.`;
     renderInventory();
-    showToast(status.textContent);
+    const refreshedStatus = document.querySelector("#pharmacy-import-status");
+    if (refreshedStatus) {
+      refreshedStatus.textContent = `${successMessage} تم تحديث جدول المخزون.`;
+      refreshedStatus.className = "import-status is-success";
+    }
+    showToast(successMessage);
   } catch (error) {
     status.textContent = error.message || "تعذر استيراد الملف.";
     status.className = "import-status is-error";

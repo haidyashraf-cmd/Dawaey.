@@ -213,7 +213,7 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     if (item.kind === "donation_accepted") {
-      return `<button type="button" class="notification-card ${item.isRead ? "is-read" : ""}" data-notification-open data-notification-id="${escapeHtml(item.id)}"><span class="notification-icon" aria-hidden="true">✓</span><span class="notification-card-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.pharmacyName || "الصيدلية وافقت على الطلب")}</span><small>اضغطي لعرض البيانات والتواصل</small></span><span class="notification-arrow" aria-hidden="true">←</span></button>`;
+      return `<article class="notification-item donation-notification ${item.isRead ? "is-read" : ""}"><div class="notification-message-row"><div class="notification-message-copy"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></div><button type="button" class="notification-open-button" data-notification-open data-notification-id="${escapeHtml(item.id)}">عرض بيانات الصيدلية</button></div></article>`;
     }
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';

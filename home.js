@@ -452,14 +452,31 @@ function renderDonationResults(medicine, area) {
 function assistantMedicineCards(records) {
   return records.map((record) => `<article class="assistant-medicine-card"><div><strong>${escapeHtml(record["اسم الدواء"] || "دواء")}</strong><small>${escapeHtml(record["المادة الفعالة"] || "المادة الفعالة غير محددة في السجل")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(record["اسم الدواء"] || "")}">عرض الدواء</button></article>`).join("");
 }
+function assistantQuickActions(actions) {
+  return `<div class="assistant-quick-actions">${actions.map(([label, prompt]) => `<button type="button" data-assistant-prompt="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`).join("")}</div>`;
+}
 function assistantReply(question) {
   const query = normalize(question);
+  if (/^(اهلا|أهلا|هاي|hello|hi|السلام عليكم|صباح الخير|مساء الخير)/i.test(question.trim())) return `أهلًا بيك! أنا مساعد دوائي. ${assistantQuickActions([["اسأل عن البرد", "عندي برد"], ["اسأل عن التهاب", "عندي التهاب"], ["ابحث عن دواء", "ابحث عن Panadol"]])}`;
+  if (query.includes("شكرا") || query.includes("متشكر")) return `العفو! أنا هنا أساعدك في فهم بيانات الدواء والبحث داخل الكتالوج. ${assistantQuickActions([["عندي عرض", "عندي صداع"], ["ابحث عن صيدلية", "أين أجد صيدلية في المعادي؟"]])}`;
+  if (query.includes("انت مين") || query.includes("بتعمل ايه") || query.includes("ممكن تساعد")) return `أنا مساعد دوائي أقدر أبحث في سجل الأدوية، أوضح المادة الفعالة، وأقترح فئة عامة مرتبطة بالحالة. لا أشخّص ولا أحدد جرعات، واسأل الصيدلي قبل الاستخدام. ${assistantQuickActions([["دواء للبرد", "عندي برد"], ["دواء للالتهاب", "عندي التهاب"], ["ابحث عن دواء", "ابحث عن Panadol"]])}`;
+  if (query.includes("سعر") || query.includes("بكام") || query.includes("تكلف")) return "الكتالوج الحالي لا يحتوي على أسعار. ابحث عن اسم الدواء ثم تواصل مع الصيدلية مباشرة لمعرفة السعر والتوفر.";
+  if (query.includes("جرع") || query.includes("كام قرص") || query.includes("اخد قد ايه")) return "لا أقدر أحدد جرعة أو عدد أقراص؛ الجرعة تعتمد على السن والحالة والأدوية الأخرى. ارجع لصيدلي أو طبيب، خصوصًا للأطفال وكبار السن.";
+  if (query.includes("حامل") || query.includes("حمل") || query.includes("طفل") || query.includes("رضيع") || query.includes("مزمن")) return "الحالة دي تحتاج سؤال الصيدلي أو الطبيب قبل أي دواء. ما تستخدمش اقتراحًا من المساعد بدون مراجعة المختص.";
   const medicine = getRecords().find((record) => {
     const name = normalize(record["اسم الدواء"]);
     return name && query.includes(name);
   }) || findMatches(question)[0];
   if (medicine) return `<strong>لقيت الدواء في سجل دوائي</strong><div class="assistant-medicine-card"><div><strong>${escapeHtml(medicine["اسم الدواء"])}</strong><small>${escapeHtml(medicine["المادة الفعالة"] || "المادة الفعالة غير محددة في المصدر")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(medicine["اسم الدواء"])}">عرض الدواء</button></div><small>البيانات إرشادية فقط؛ اسأل الصيدلي عن الملاءمة والجرعة.</small>`;
 
+  if (query.includes("بديل") || query.includes("بدائل")) {
+    const match = findMatches(question)[0];
+    if (!match) return "اكتب اسم الدواء الذي تريد بديلًا له، وسأبحث عن نفس المادة الفعالة في السجل. وبعدها اسأل الصيدلي قبل الاستبدال.";
+    const ingredient = normalize(match["المادة الفعالة"]);
+    const alternatives = getRecords().filter((record) => ingredient && normalize(record["المادة الفعالة"]) === ingredient && normalize(record["اسم الدواء"]) !== normalize(match["اسم الدواء"])).slice(0, 4);
+    return alternatives.length ? `<strong>بدائل لها نفس المادة الفعالة المسجلة:</strong><div class="assistant-medicine-list">${assistantMedicineCards(alternatives)}</div><small>لا تبدّل الدواء إلا بعد سؤال الصيدلي.</small>` : "مش لاقي بديلًا بنفس المادة الفعالة في السجل. اسأل الصيدلي عن البدائل الآمنة.";
+  }
+  if (query.includes("مضاد حيوي") || query.includes("انتي بيوتك") || query.includes("مضاد حيوى")) return "المضاد الحيوي لا يُستخدم لمجرد البرد أو الالتهاب، ولازم يحدده الطبيب أو الصيدلي حسب السبب. اكتب اسم دواء محدد لو عايز تعرف مادته الفعالة.";
   const emergencySymptoms = ["ضيق تنفس", "صعوبة تنفس", "ألم صدر", "فقدان وعي", "نزيف شديد", "تشنج", "حساسية شديدة", "تورم الوجه"];
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
 
@@ -494,7 +511,7 @@ function assistantReply(question) {
     return "اكتب اسم المنطقة أو المحافظة بشكل أوضح، وسأبحث في دليل الفروع المسجلة.";
   }
   if (query.includes("جرع") || query.includes("تشخيص")) return "أقدر أوضح بيانات الدواء وأقترح فئة عامة فقط، لكن لا أحدد جرعة أو أشخّص. اسأل طبيبًا أو صيدليًا، ولو الحالة طارئة اتصل بـ123.";
-  return "مش قادر أربط العرض ده بدواء موجود في الكتالوج. اكتب العرض بشكل أوضح، ولو مش متأكد أو العرض شديد ارجع لصيدلي بدل ما تستخدم دواء من نفسك.";
+  return `مش قادر أربط السؤال ببيانات موجودة في الكتالوج. جرّب تكتب اسم الدواء أو الحالة أو سؤالك بشكل أوضح، ولو السؤال عن جرعة أو حالة شديدة ارجع لصيدلي. ${assistantQuickActions([["عندي برد", "عندي برد"], ["عندي التهاب", "عندي التهاب"], ["ابحث عن صيدلية", "أين أجد صيدلية في المعادي؟"]])}`;
 }
 function addAssistantMessage(text, kind) {
   const messages = document.querySelector("#assistant-messages");
@@ -530,6 +547,13 @@ function setupDonationAndAssistant() {
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
   document.querySelector("#assistant-messages")?.addEventListener("click", (event) => {
+    const quickButton = event.target.closest("[data-assistant-prompt]");
+    if (quickButton) {
+      const input = document.querySelector("#assistant-input");
+      input.value = quickButton.dataset.assistantPrompt;
+      input.focus();
+      return;
+    }
     const medicineButton = event.target.closest("[data-assistant-medicine]");
     if (!medicineButton) return;
     const medicineName = medicineButton.dataset.assistantMedicine;

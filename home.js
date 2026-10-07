@@ -83,6 +83,13 @@ function editDistance(left, right) {
   return previous[right.length];
 }
 
+function symptomPhraseMatches(query, phrase) {
+  const ignored = new Set(["في", "من", "عندي", "عند", "ب", "بـ", "و", "او", "أو", "مع", "على", "يا", "هو", "هي"]);
+  const clean = (value) => normalize(value).split(/\s+/).map((token) => token.replace(/^ال/, "")).filter((token) => token.length > 1 && !ignored.has(token));
+  const queryTokens = clean(query);
+  const phraseTokens = clean(phrase);
+  return phraseTokens.length > 0 && phraseTokens.every((token) => queryTokens.some((candidate) => candidate === token || candidate.includes(token) || token.includes(candidate)));
+}
 function findMatches(query) {
   const normalizedQuery = normalize(query);
   const aliasedQuery = normalize(aliases.get(normalizedQuery) ?? query);
@@ -502,7 +509,7 @@ function assistantReply(question) {
     { words: ["غثيان", "ترجيع", "قيء"], category: "غثيان أو قيء", options: "اسأل الصيدلي عن خيار مناسب، واهتم بالسوائل؛ القيء المتكرر أو المصحوب بدم يحتاج طوارئ" },
     { words: ["اسهال", "إسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
   ];
-  const matched = advice.find((item) => item.words.some((word) => query.includes(normalize(word))));
+  const matched = advice.find((item) => item.words.some((word) => symptomPhraseMatches(question, word)));
   if (matched) {
     const tokens = matched.options.split(/مثل|أو|،/).map((token) => normalize(token)).filter((token) => token.length > 3);
     const catalog = getRecords().filter((record) => {

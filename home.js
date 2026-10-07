@@ -770,10 +770,16 @@ async function start() {
       await loadPatientData();
       renderNotifications();
       window.clearInterval(state.notificationTimer);
-      state.notificationTimer = window.setInterval(async () => {
+      const refreshPatientNotifications = async () => {
+        if (document.visibilityState === "hidden") return;
         await loadPatientData();
         renderNotifications();
-      }, 15000);
+      };
+      state.notificationTimer = window.setInterval(refreshPatientNotifications, 3000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") refreshPatientNotifications();
+      });
+      window.addEventListener("focus", refreshPatientNotifications);
     }
     applyRoleVisibility();
   } catch {

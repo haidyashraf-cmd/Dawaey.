@@ -464,6 +464,8 @@ function assistantReply(question) {
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
 
   const advice = [
+    { words: ["برد", "نزلة برد", "زكام", "إنفلونزا", "انفلونزا", "رشح"], category: "برد أو إنفلونزا", options: "يمكن سؤال الصيدلي عن أدوية البرد الموجودة في السجل مثل Congestal أو Flurest أو Cold Free", catalogNames: ["congestal", "flurest", "cold free", "paracetamol"] },
+    { words: ["التهاب", "التهابات", "التهاب عضلات", "التهاب مفاصل"], category: "التهاب أو ألم", options: "اسأل الصيدلي عن مضاد التهاب مناسب مثل Cataflam أو Brufen، ولا تبدأ مضادًا حيويًا من نفسك", catalogNames: ["cataflam", "brufen", "diclofenac", "ibuprofen"] },
     { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
     { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
     { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام", catalogNames: ["cetirizine", "loratadine", "claritine", "claritin", "telfast"] },

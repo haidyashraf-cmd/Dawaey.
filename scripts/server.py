@@ -122,6 +122,13 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS pharmacy_imports_account ON pharmacy_imports(account_id, row_order);
             """
         )
+        # Older Railway databases were created before accepted pharmacy details were stored.
+        # Add the column without affecting existing donation requests.
+        try:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN accepted_by_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL")
+        except sqlite3.OperationalError as error:
+            if "duplicate column name" not in str(error).lower():
+                raise
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -464,7 +471,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if route == "/api/pharmacy/import":
                 self.handle_pharmacy_import()
                 return
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
@@ -571,18 +578,24 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         with closing(connect_database()) as connection, connection:
             if not self.require_role(connection, "pharmacy"):
                 return
+            pharmacy_account = self.authenticated_account(connection)
             previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
             cursor = connection.execute(
-                "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
-                (status, now, donation_id),
+                "UPDATE donation_requests SET status = ?, updated_at = ?, accepted_by_account_id = CASE WHEN ? = 'accepted' THEN ? ELSE accepted_by_account_id END WHERE id = ?",
+                (status, now, status, pharmacy_account["id"] if pharmacy_account else None, donation_id),
             )
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
             if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
+                pharmacy = connection.execute("SELECT pharmacy_name, district, whatsapp FROM pharmacy_applications WHERE account_id = ?", (pharmacy_account["id"],)).fetchone() if pharmacy_account else None
+                pharmacy_name = pharmacy["pharmacy_name"] if pharmacy else "الصيدلية"
+                pharmacy_area = pharmacy["district"] if pharmacy else ""
+                pharmacy_phone = pharmacy["whatsapp"] if pharmacy else ""
+                contact = f" تواصل مع {pharmacy_name}" + (f" في {pharmacy_area}" if pharmacy_area else "") + (f" على {pharmacy_phone}" if pharmacy_phone else "") + "."
                 connection.execute(
                     "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
-                    (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
+                    (previous["account_id"], "تم قبول تبرعك", f"وافقت {pharmacy_name} على استلام تبرعك بدواء {previous['medicine']}.{contact}", donation_id, now),
                 )
             row = connection.execute(
                 "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
@@ -618,8 +631,15 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             account = self.require_role(connection, "patient")
             if not account:
                 return
-            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
-        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+            rows = connection.execute("""
+                SELECT n.id, n.kind, n.title, n.message, n.related_id, n.is_read, n.created_at,
+                       d.area, pa.pharmacy_name, pa.whatsapp
+                FROM notifications n
+                LEFT JOIN donation_requests d ON d.id = n.related_id
+                LEFT JOIN pharmacy_applications pa ON pa.account_id = d.accepted_by_account_id
+                WHERE n.account_id = ? ORDER BY n.created_at DESC LIMIT 50
+            """, (account["id"],)).fetchall()
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "area": row["area"] or "", "pharmacyName": row["pharmacy_name"] or "", "pharmacyPhone": row["whatsapp"] or "", "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
 
     def handle_mark_notifications_read(self) -> None:
         with closing(connect_database()) as connection, connection:

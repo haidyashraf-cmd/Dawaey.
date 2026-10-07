@@ -211,9 +211,21 @@ function renderNotifications() {
   const unread = state.notifications.filter((item) => !item.isRead).length;
   count.textContent = String(unread);
   count.hidden = unread === 0;
-  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
+  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
+    const donation = item.kind === "donation_accepted";
+    const phone = String(item.pharmacyPhone || "").replace(/[^0-9+]/g, "");
+    const action = donation ? `<div class="notification-actions"><button type="button" class="notification-contact" data-notification-action data-area="${escapeHtml(item.area || "")}">التواصل مع الصيدلية</button>${phone ? `<a class="notification-call" href="tel:${escapeHtml(phone)}">اتصال مباشر</a>` : ""}</div>` : "";
+    return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${action}</article>`;
+  }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
-
+async function markNotificationsRead() {
+  if (!state.notifications.some((item) => !item.isRead)) return;
+  state.notifications = state.notifications.map((item) => ({ ...item, isRead: true }));
+  renderNotifications();
+  try {
+    await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" });
+  } catch { /* The local state is already read; the next refresh retries from the server. */ }
+}
 async function loadPatientData() {
   const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
   if (savedResponse.ok) {
@@ -632,8 +644,30 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     const button = document.querySelector("#patient-notifications");
     const opening = panel?.hasAttribute("hidden");
-    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
-    else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
+    if (opening) {
+      panel?.removeAttribute("hidden");
+      button?.setAttribute("aria-expanded", "true");
+      await markNotificationsRead();
+    } else {
+      panel?.setAttribute("hidden", "");
+      button?.setAttribute("aria-expanded", "false");
+    }
+  });
+  document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-notification-action]");
+    if (!action) return;
+    const area = action.dataset.area || "";
+    const results = document.querySelector("#search-results");
+    const areaInput = document.querySelector("#area-search");
+    const panel = document.querySelector("#notifications-panel");
+    panel?.setAttribute("hidden", "");
+    document.querySelector("#patient-notifications")?.setAttribute("aria-expanded", "false");
+    if (areaInput) areaInput.value = area;
+    state.areaQuery = area;
+    if (area) renderAreaResults(area);
+    results?.removeAttribute("hidden");
+    results?.scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast(area ? `فتحنا دليل الصيدليات في ${area}` : "فتحنا دليل الصيدليات للتواصل");
   });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));

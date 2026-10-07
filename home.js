@@ -231,12 +231,15 @@ function openPharmacyContact(notification) {
   if (!dialog) return;
   const name = notification.pharmacyName || "الصيدلية";
   const phone = String(notification.pharmacyPhone || "").replace(/[^0-9+]/g, "");
+  const address = notification.pharmacyAddress || notification.area || "العنوان غير مسجل";
+  const area = notification.area || "المنطقة غير مسجلة";
   document.querySelector("#contact-pharmacy-name").textContent = name;
-  document.querySelector("#contact-pharmacy-medicine").textContent = notification.message || "تم قبول طلب التبرع.";
-  document.querySelector("#contact-pharmacy-address").textContent = notification.pharmacyAddress || notification.area || "العنوان غير مسجل";
-  document.querySelector("#contact-pharmacy-area").textContent = notification.area || "المنطقة غير مسجلة";
+  document.querySelector("#contact-pharmacy-message").textContent = `تم قبول تبرعك بدواء ${notification.medicine || "الدواء المطلوب"}. الصيدلية وافقت على الاستلام، وللتواصل معها استخدمي بيانات الاتصال الموجودة في رسالة القبول.`;
+  document.querySelector("#contact-pharmacy-address").textContent = `العنوان: ${address}`;
+  document.querySelector("#contact-pharmacy-area").textContent = `المنطقة: ${area}`;
+  document.querySelector("#contact-pharmacy-phone").textContent = phone ? `للتواصل: ${notification.pharmacyPhone}` : "للتواصل: رقم الهاتف غير مسجل";
   const call = document.querySelector("#contact-pharmacy-call");
-  if (phone) { call.href = `tel:${phone}`; call.textContent = `اتصال بـ ${name}`; call.removeAttribute("hidden"); }
+  if (phone) { call.href = `tel:${phone}`; call.removeAttribute("hidden"); }
   else { call.setAttribute("hidden", ""); }
   dialog.showModal();
 }

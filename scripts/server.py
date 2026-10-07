@@ -633,13 +633,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 return
             rows = connection.execute("""
                 SELECT n.id, n.kind, n.title, n.message, n.related_id, n.is_read, n.created_at,
-                       d.area, pa.pharmacy_name, pa.address, pa.whatsapp
+                       d.area, d.medicine, pa.pharmacy_name, pa.address, pa.whatsapp
                 FROM notifications n
                 LEFT JOIN donation_requests d ON d.id = n.related_id
                 LEFT JOIN pharmacy_applications pa ON pa.account_id = d.accepted_by_account_id
                 WHERE n.account_id = ? ORDER BY n.created_at DESC LIMIT 50
             """, (account["id"],)).fetchall()
-        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "area": row["area"] or "", "pharmacyName": row["pharmacy_name"] or "", "pharmacyAddress": row["address"] or "", "pharmacyPhone": row["whatsapp"] or "", "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "area": row["area"] or "", "medicine": row["medicine"] or "", "pharmacyName": row["pharmacy_name"] or "", "pharmacyAddress": row["address"] or "", "pharmacyPhone": row["whatsapp"] or "", "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
 
     def handle_mark_notifications_read(self) -> None:
         with closing(connect_database()) as connection, connection:

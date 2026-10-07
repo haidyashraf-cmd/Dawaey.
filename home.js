@@ -213,7 +213,7 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     if (item.kind === "donation_accepted") {
-      return `<button type="button" class="notification-card ${item.isRead ? "is-read" : ""}" data-notification-open data-notification-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><span>اضغطي لعرض بيانات الصيدلية والتواصل معها</span><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></button>`;
+      return `<button type="button" class="notification-card ${item.isRead ? "is-read" : ""}" data-notification-open data-notification-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><span class="notification-action-label">اضغطي هنا للتواصل مع الصيدلية</span><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></button>`;
     }
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
@@ -239,8 +239,9 @@ function openPharmacyContact(notification) {
   document.querySelector("#contact-pharmacy-area").textContent = `المنطقة: ${area}`;
   document.querySelector("#contact-pharmacy-phone").textContent = phone ? `للتواصل: ${notification.pharmacyPhone}` : "للتواصل: رقم الهاتف غير مسجل";
   const call = document.querySelector("#contact-pharmacy-call");
-  if (phone) { call.href = `tel:${phone}`; call.removeAttribute("hidden"); }
-  else { call.setAttribute("hidden", ""); }
+  call.removeAttribute("hidden");
+  if (phone) { call.href = `tel:${phone}`; call.textContent = `اتصلي بالصيدلية: ${notification.pharmacyPhone}`; call.removeAttribute("aria-disabled"); call.classList.remove("is-disabled"); }
+  else { call.href = "#"; call.textContent = "رقم التواصل غير مسجل"; call.setAttribute("aria-disabled", "true"); call.classList.add("is-disabled"); }
   dialog.showModal();
 }
 async function loadPatientData() {

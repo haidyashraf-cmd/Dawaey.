@@ -212,10 +212,10 @@ function renderNotifications() {
   count.textContent = String(unread);
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
-    const donation = item.kind === "donation_accepted";
-    const phone = String(item.pharmacyPhone || "").replace(/[^0-9+]/g, "");
-    const action = donation ? `<div class="notification-actions"><button type="button" class="notification-contact" data-notification-action data-area="${escapeHtml(item.area || "")}">التواصل مع الصيدلية</button>${phone ? `<a class="notification-call" href="tel:${escapeHtml(phone)}">اتصال مباشر</a>` : ""}</div>` : "";
-    return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${action}</article>`;
+    if (item.kind === "donation_accepted") {
+      return `<button type="button" class="notification-card ${item.isRead ? "is-read" : ""}" data-notification-open data-notification-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><span>اضغطي لعرض بيانات الصيدلية والتواصل معها</span><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></button>`;
+    }
+    return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
 async function markNotificationsRead() {
@@ -225,6 +225,20 @@ async function markNotificationsRead() {
   try {
     await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" });
   } catch { /* The local state is already read; the next refresh retries from the server. */ }
+}
+function openPharmacyContact(notification) {
+  const dialog = document.querySelector("#pharmacy-contact-dialog");
+  if (!dialog) return;
+  const name = notification.pharmacyName || "الصيدلية";
+  const phone = String(notification.pharmacyPhone || "").replace(/[^0-9+]/g, "");
+  document.querySelector("#contact-pharmacy-name").textContent = name;
+  document.querySelector("#contact-pharmacy-medicine").textContent = notification.message || "تم قبول طلب التبرع.";
+  document.querySelector("#contact-pharmacy-address").textContent = notification.pharmacyAddress || notification.area || "العنوان غير مسجل";
+  document.querySelector("#contact-pharmacy-area").textContent = notification.area || "المنطقة غير مسجلة";
+  const call = document.querySelector("#contact-pharmacy-call");
+  if (phone) { call.href = `tel:${phone}`; call.textContent = `اتصال بـ ${name}`; call.removeAttribute("hidden"); }
+  else { call.setAttribute("hidden", ""); }
+  dialog.showModal();
 }
 async function loadPatientData() {
   const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
@@ -654,20 +668,13 @@ function setupEvents() {
     }
   });
   document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
-    const action = event.target.closest("[data-notification-action]");
-    if (!action) return;
-    const area = action.dataset.area || "";
-    const results = document.querySelector("#search-results");
-    const areaInput = document.querySelector("#area-search");
-    const panel = document.querySelector("#notifications-panel");
-    panel?.setAttribute("hidden", "");
+    const card = event.target.closest("[data-notification-open]");
+    if (!card) return;
+    const notification = state.notifications.find((item) => String(item.id) === String(card.dataset.notificationId));
+    if (!notification) return;
+    document.querySelector("#notifications-panel")?.setAttribute("hidden", "");
     document.querySelector("#patient-notifications")?.setAttribute("aria-expanded", "false");
-    if (areaInput) areaInput.value = area;
-    state.areaQuery = area;
-    if (area) renderAreaResults(area);
-    results?.removeAttribute("hidden");
-    results?.scrollIntoView({ behavior: "smooth", block: "start" });
-    showToast(area ? `فتحنا دليل الصيدليات في ${area}` : "فتحنا دليل الصيدليات للتواصل");
+    openPharmacyContact(notification);
   });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));

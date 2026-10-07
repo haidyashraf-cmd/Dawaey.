@@ -449,13 +449,16 @@ function renderDonationResults(medicine, area) {
   }).join("");
 }
 
+function assistantMedicineCards(records) {
+  return records.map((record) => `<article class="assistant-medicine-card"><div><strong>${escapeHtml(record["اسم الدواء"] || "دواء")}</strong><small>${escapeHtml(record["المادة الفعالة"] || "المادة الفعالة غير محددة في السجل")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(record["اسم الدواء"] || "")}">عرض الدواء</button></article>`).join("");
+}
 function assistantReply(question) {
   const query = normalize(question);
   const medicine = getRecords().find((record) => {
     const name = normalize(record["اسم الدواء"]);
     return name && query.includes(name);
   }) || findMatches(question)[0];
-  if (medicine) return `لقيت <strong>${escapeHtml(medicine["اسم الدواء"])}</strong>. المادة الفعالة المسجلة: <strong>${escapeHtml(medicine["المادة الفعالة"] || "غير محددة في المصدر")}</strong>، وتصنيفه: ${escapeHtml(medicine["طبيعة الدواء"] || "صنف دوائي")}. اسأل الصيدلي عن الملاءمة والجرعة.`;
+  if (medicine) return `<strong>لقيت الدواء في سجل دوائي</strong><div class="assistant-medicine-card"><div><strong>${escapeHtml(medicine["اسم الدواء"])}</strong><small>${escapeHtml(medicine["المادة الفعالة"] || "المادة الفعالة غير محددة في المصدر")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(medicine["اسم الدواء"])}">عرض الدواء</button></div><small>البيانات إرشادية فقط؛ اسأل الصيدلي عن الملاءمة والجرعة.</small>`;
 
   const emergencySymptoms = ["ضيق تنفس", "صعوبة تنفس", "ألم صدر", "فقدان وعي", "نزيف شديد", "تشنج", "حساسية شديدة", "تورم الوجه"];
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
@@ -478,8 +481,8 @@ function assistantReply(question) {
       const text = `${normalize(record["اسم الدواء"])} ${normalize(record["طبيعة الدواء"])} ${normalize(record["المادة الفعالة"])}`;
       return (matched.catalogNames || []).some((name) => text.includes(normalize(name))) || text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
-    const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
-    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>اقتراح مبدئي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
+    if (!catalog.length) return `<strong>فهمت إن عندك ${escapeHtml(matched.category)}</strong><br>مش لاقي دواء مناسب للعرض ده في كتالوج دوائي الحالي. <strong>الأفضل ترجع لصيدلي</strong> عشان يحدد السبب والدواء المناسب، خصوصًا لو العرض مستمر أو شديد.<br><small>المساعد لا يشخّص ولا يحدد جرعات.</small>`;
+    return `<strong>فهمت إن عندك ${escapeHtml(matched.category)}</strong><br>${escapeHtml(matched.options)}، ودي أدوية لقيتها في سجل دوائي:<div class="assistant-medicine-list">${assistantMedicineCards(catalog)}</div><small>اختار دواء لعرض بياناته. الاقتراح لا يغني عن سؤال الصيدلي ولا يحدد جرعة.</small>`;
   }
   const areaMatch = question.match(/(?:في|بـ|ب|منطقة)\s+(.+)/i);
   if (query.includes("صيدلي") || query.includes("فرع") || query.includes("عنوان")) {
@@ -489,7 +492,7 @@ function assistantReply(question) {
     return "اكتب اسم المنطقة أو المحافظة بشكل أوضح، وسأبحث في دليل الفروع المسجلة.";
   }
   if (query.includes("جرع") || query.includes("تشخيص")) return "أقدر أوضح بيانات الدواء وأقترح فئة عامة فقط، لكن لا أحدد جرعة أو أشخّص. اسأل طبيبًا أو صيدليًا، ولو الحالة طارئة اتصل بـ123.";
-  return "أقدر أساعدك في البحث عن دواء، المادة الفعالة، شكوى عامة مثل الصداع أو الحموضة، أو صيدلية حسب المنطقة. اكتب الأعراض بالتفصيل بدون بيانات شخصية.";
+  return "مش قادر أربط العرض ده بدواء موجود في الكتالوج. اكتب العرض بشكل أوضح، ولو مش متأكد أو العرض شديد ارجع لصيدلي بدل ما تستخدم دواء من نفسك.";
 }
 function addAssistantMessage(text, kind) {
   const messages = document.querySelector("#assistant-messages");
@@ -524,6 +527,15 @@ function setupDonationAndAssistant() {
     }
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
+  document.querySelector("#assistant-messages")?.addEventListener("click", (event) => {
+    const medicineButton = event.target.closest("[data-assistant-medicine]");
+    if (!medicineButton) return;
+    const medicineName = medicineButton.dataset.assistantMedicine;
+    document.querySelector("#medicine-search").value = medicineName;
+    performSearch(medicineName);
+    document.querySelector("#search-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    addAssistantMessage(`فتحت نتيجة <strong>${escapeHtml(medicineName)}</strong> في البحث. راجع بياناته واسأل الصيدلي قبل الاستخدام.`, "assistant");
+  });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));
 }
 

@@ -107,12 +107,6 @@ function showAccount(user) {
   document.querySelector(".auth-mode").hidden = true;
   const panel = document.querySelector("#signed-in-panel");
   const isPharmacy = user.role === "pharmacy";
-  if (isPharmacy) {
-    window.location.replace("pharmacy.html");
-    return;
-  }
-  window.location.replace("index.html?welcome=1#top");
-  return;
   panel.innerHTML = `<h2>أهلاً ${escapeHtml(user.name)}</h2><p>${isPharmacy ? `حساب ${escapeHtml(user.pharmacyName || "الصيدلية")} في انتظار موافقة إدارة دوائي.` : "تم تسجيل دخولك. تقدر ترجع للبحث وتكمل من حيث وصلت."}</p><span class="${isPharmacy ? "pending-mark" : "pending-mark"}">${isPharmacy ? "قيد المراجعة" : "حساب مريض"}</span><div class="signed-in-actions"><a href="index.html${isPharmacy ? "#for-everyone" : "#my-medicines"}">العودة إلى دوائي</a><button type="button" id="logout-button">تسجيل الخروج</button></div>`;
   panel.hidden = false;
   document.querySelector("#auth-title").textContent = isPharmacy ? "طلب الصيدلية" : "تم تسجيل الدخول";
@@ -198,10 +192,7 @@ form.addEventListener("submit", async (event) => {
     } else {
       const response = await requestApi(state.mode === "register" ? "register" : "login", state.mode === "register" ? { ...payload, privacyAccepted: payload.privacyAccepted } : { role: state.role, contact: payload.contact, password: payload.password });
       if (response.user) {
-        showAccount(response.user);
-        if (response.user.role !== "pharmacy" || response.user.status !== "approved") {
-          setMessage(state.mode === "register" ? "تم إنشاء حساب المريض وتسجيل الدخول بنجاح." : "تم تسجيل الدخول بنجاح.", "success");
-        }
+        window.location.assign("index.html?welcome=1#donate-medicine");
       }
     }
   } catch (error) {

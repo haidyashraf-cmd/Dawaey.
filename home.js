@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -197,39 +197,6 @@ function renderAreaResults(query = "") {
   }).join("");
 }
 
-async function persistSavedMedicine(key, saved) {
-  if (state.user?.role !== "patient") return;
-  const response = await fetch("/api/saved-medicines", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medicineKey: key, saved }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "تعذر حفظ الدواء.");
-}
-
-function renderNotifications() {
-  const panel = document.querySelector("#notifications-panel");
-  const count = document.querySelector("#notification-count");
-  if (!panel || !count) return;
-  const unread = state.notifications.filter((item) => !item.isRead).length;
-  count.textContent = String(unread);
-  count.hidden = unread === 0;
-  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
-}
-
-async function loadPatientData() {
-  const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
-  if (savedResponse.ok) {
-    const savedPayload = await savedResponse.json();
-    const serverSaved = new Set((savedPayload.medicineKeys || []).map(String));
-    let localSaved = new Set();
-    try { localSaved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String)); } catch { /* The server list remains available. */ }
-    state.saved = new Set([...serverSaved, ...localSaved]);
-    for (const key of localSaved) if (!serverSaved.has(key)) persistSavedMedicine(key, true).catch(() => {});
-  }
-  if (notificationsResponse.ok) {
-    const notificationPayload = await notificationsResponse.json();
-    state.notifications = notificationPayload.notifications || [];
-  }
-}
-
 function updateSavedList() {
   const savedList = document.querySelector("#saved-list");
   const records = getRecords().filter((record) => state.saved.has(String(record["م"])));
@@ -267,16 +234,6 @@ function performSearch(query) {
   }
   state.matches = findMatches(trimmedQuery);
   const isPatient = state.user?.role === "patient";
-  if (state.matches[0]) {
-    const searchedKey = String(state.matches[0]["م"]);
-    if (!state.saved.has(searchedKey)) {
-      state.saved.add(searchedKey);
-      try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* The account database is the primary store. */ }
-      if (isPatient) persistSavedMedicine(searchedKey, true).catch((error) => showToast(error.message));
-      updateSavedList();
-      showToast(`تم حفظ ${state.matches[0]["اسم الدواء"]} في أدويتي`);
-    }
-  }
   document.querySelector("#results-title").textContent = `نتائج: ${trimmedQuery}`;
   document.querySelector("#results-summary").textContent = state.matches.length ? `لقينا ${numberFormat.format(state.matches.length)} تطابق في سجل الأصناف.${!isPatient && state.matches.length > 5 ? " عرضنا أول ٥ للزائر." : ""}` : "ملقيناش الاسم ده في الكتالوج الحالي.";
   renderMedicineResults();
@@ -378,9 +335,13 @@ function setupDemo() {
 }
 
 function applyRoleVisibility() {
-  const pharmacyOnly = state.user?.role === "patient";
+  const isPatient = state.user?.role === "patient";
+  const pharmacyOnly = isPatient;
   document.querySelectorAll("[data-pharmacy-only]").forEach((element) => {
     element.hidden = pharmacyOnly;
+  });
+  document.querySelectorAll("[data-patient-only]").forEach((element) => {
+    element.hidden = !isPatient;
   });
 }
 function updateActiveNav(sectionId = null) {
@@ -443,12 +404,12 @@ function assistantReply(question) {
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
 
   const advice = [
-    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol، إذا لم يوجد مانع للاستخدام" },
+    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol" },
     { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة" },
     { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام" },
     { words: ["حموضه", "حرقان", "ارتجاع", "معدة", "المعدة"], category: "حموضة أو ارتجاع", options: "يمكن سؤال الصيدلي عن أدوية الحموضة مثل أوميبرازول أو مضاد حموضة مناسب" },
     { words: ["كحه", "كحة", "بلغم", "سعال"], category: "كحة أو سعال", options: "اسأل الصيدلي عن علاج مناسب حسب كون الكحة جافة أو مصحوبة ببلغم؛ لا تستخدم مضادًا حيويًا من نفسك" },
-    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن", "وجع بطن"], category: "مغص أو تقلصات", options: "يمكن سؤال الصيدلي عن هيوسين بيوتيل بروميد مثل Buscopan للتقلصات، لكن ألم البطن المستمر أو الشديد يحتاج تقييم السبب أولًا" },
+    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن"], category: "مغص أو تقلصات", options: "يمكن سؤال الصيدلي عن مضاد للتقلصات، لكن ألم البطن المستمر يحتاج تقييم السبب أولًا" },
     { words: ["التهاب حلق", "زور", "حلق", "الم حلق", "ألم حلق"], category: "ألم أو التهاب الحلق", options: "يمكن سؤال الصيدلي عن أقراص استحلاب ومسكن مناسب، ولا تبدأ مضادًا حيويًا دون كشف" },
     { words: ["غثيان", "ترجيع", "قيء"], category: "غثيان أو قيء", options: "اسأل الصيدلي عن خيار مناسب، واهتم بالسوائل؛ القيء المتكرر أو المصحوب بدم يحتاج طوارئ" },
     { words: ["اسهال", "إسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
@@ -461,7 +422,7 @@ function assistantReply(question) {
       return text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
     const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
-    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>خيارات عامة تسأل عنها الصيدلي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
+    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>اقتراح مبدئي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
   }
   const areaMatch = question.match(/(?:في|بـ|ب|منطقة)\s+(.+)/i);
   if (query.includes("صيدلي") || query.includes("فرع") || query.includes("عنوان")) {
@@ -484,23 +445,19 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
-    const nationalId = document.querySelector("#donation-national-id").value.replace(/\D/g, "");
-    const quantity = document.querySelector("#donation-quantity").value.trim();
-    const unit = document.querySelector("#donation-unit").value;
-    if (!/^\d{14}$/.test(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقم."); return; }
-    if (!quantity || !unit) { showToast("اكتب الكمية واختار نوع الوحدة."); return; }
+    const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
     renderDonationResults(medicine, area);
     try {
       const response = await fetch("/api/donations", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine, area, quantity, unit, nationalId }),
+        body: JSON.stringify({ medicine, area, quantity }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
       const notice = document.querySelector("#donation-results");
-      notice.insertAdjacentHTML("afterbegin", `<p class="donation-saved-note"><strong>تم حفظ التبرع بنجاح.</strong> رقم الطلب: <strong>${escapeHtml(payload.request?.id || "سيظهر للصيدلية")}</strong> — سيظهر للصيدليات المعتمدة، وعند القبول سيصلك إشعار في حسابك.</p>`);
+      notice.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل طلب التبرع على الخادم وسيظهر للصيدليات من أي جهاز.</p>');
     } catch (error) {
       showToast(error.message || "تعذر تسجيل طلب التبرع.");
     }
@@ -589,14 +546,6 @@ function setupEvents() {
     const activate = () => { if (card.dataset.action === "search") { searchInput.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); } else if (card.dataset.action === "source") { document.querySelector("#medicine-info")?.scrollIntoView({ behavior: "smooth" }); } else { document.querySelector("#for-everyone")?.scrollIntoView({ behavior: "smooth" }); } };
     card.addEventListener("click", activate); card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(); } });
   });
-  document.querySelector("#patient-notifications")?.addEventListener("click", async () => {
-    const panel = document.querySelector("#notifications-panel");
-    const button = document.querySelector("#patient-notifications");
-    const opening = panel?.hasAttribute("hidden");
-    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
-    else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
-  });
-  document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {
     const query = event.target.value.trim();
@@ -643,11 +592,9 @@ function setupEvents() {
     const button = event.target.closest("[data-save-medicine]");
     if (!button) return;
     const key = String(button.dataset.saveMedicine);
-    const nextSaved = !state.saved.has(key);
-    if (nextSaved) state.saved.add(key);
-    else state.saved.delete(key);
-    try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* Server remains the source for logged-in patients. */ }
-    persistSavedMedicine(key, nextSaved).catch((error) => showToast(error.message));
+    if (state.saved.has(key)) state.saved.delete(key);
+    else state.saved.add(key);
+    try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { showToast("تعذر الحفظ على الجهاز"); }
     button.setAttribute("aria-pressed", String(state.saved.has(key)));
     button.textContent = state.saved.has(key) ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي";
     updateSavedList();
@@ -655,21 +602,13 @@ function setupEvents() {
   document.querySelector("#saved-list").addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-saved]");
     if (!button) return;
-    const key = String(button.dataset.removeSaved);
-    state.saved.delete(key);
-    persistSavedMedicine(key, false).catch((error) => showToast(error.message));
+    state.saved.delete(String(button.dataset.removeSaved));
     try { localStorage.setItem("dawaey-saved-medications", JSON.stringify([...state.saved])); } catch { /* Keep this change in memory. */ }
     updateSavedList();
   });
 }
 
 async function start() {
-  // Initialize visible sections immediately; API loading must not delay donation or assistant interactions.
-  setupTabs();
-  setupDemo();
-  setupObservers();
-  setupEvents();
-  setupDonationAndAssistant();
   try {
     const [dataResponse, sessionResponse] = await Promise.all([
       fetch("/api/bootstrap", { credentials: "same-origin" }),
@@ -687,27 +626,25 @@ async function start() {
     if (loginLink && state.user) {
       loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
-      loginLink.href = "#my-medicines";
     }
-    if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
     applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");
   }
   applyRoleVisibility();
+  setupTabs();
+  setupDemo();
+  setupObservers();
+  setupEvents();
+  setupDonationAndAssistant();
   try {
     const savedTheme = localStorage.getItem("dawaey-theme");
     if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-    const saved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String));
-    if (state.user?.role === "patient") {
-      if (!state.saved.size && saved.size) { state.saved = saved; saved.forEach((key) => persistSavedMedicine(key, true).catch(() => {})); }
-    } else {
-      state.saved = saved;
-    }
+    const saved = JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]");
+    state.saved = new Set(saved.map(String));
     updateSavedList();
   } catch { /* The default theme and empty list still work without storage. */ }
   if (state.user?.role === "patient") {
-    document.querySelector("#patient-notifications")?.removeAttribute("hidden");
     document.querySelector(".hero-copy h1").innerHTML = `أهلاً بيك يا ${escapeHtml(state.user.name)}<br><span>دواءك أقرب.</span>`;
   }
   showOnboarding();

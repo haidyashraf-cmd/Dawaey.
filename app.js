@@ -99,6 +99,17 @@ function medicineUnit(record) {
   return /^\d+$/.test(value) || !value ? "الوحدة غير محددة" : value;
 }
 
+function stripCount(record) {
+  return medicineUnit(record) === "شريط" ? numericValue(record["الكمية الحالية"] ?? record["الكمية"]) : 0;
+}
+
+function boxCount(record) {
+  const quantity = numericValue(record["الكمية الحالية"] ?? record["الكمية"]);
+  if (medicineUnit(record) === "علبة") return quantity;
+  if (medicineUnit(record) === "شريط") return Math.floor(quantity / 10);
+  return 0;
+}
+
 function getStockState(record) {
   const quantity = numericValue(record["الكمية الحالية"] ?? record["الكمية"]);
   const minimum = numericValue(record["الحد الأدنى"]);
@@ -355,8 +366,8 @@ function renderPharmacies() {
 function updateSupplyResults() {
   const query = state.supplyQuery.trim().toLocaleLowerCase();
   const records = getSupply().filter((record) => [record["اسم الدواء"], record["طبيعة الدواء"], record["حالة المخزون"]].join(" ").toLocaleLowerCase().includes(query));
-  const rows = records.slice(0, 30).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(record["الكمية الحالية"])}</td><td>${escapeHtml(record["وحدة القياس"] || "—")}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td></tr>`).join("");
-  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الكمية الحالية</th><th>وحدة القياس</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 30 ? ` · عرض أول ${formatNumber(30)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
+  const rows = records.slice(0, 30).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(stripCount(record))}</td><td class="number-cell">${formatNumber(boxCount(record))}</td><td>${escapeHtml(medicineUnit(record))}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td></tr>`).join("");
+  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الشرايط</th><th>العلب</th><th>الوحدة الأصلية</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 30 ? ` · عرض أول ${formatNumber(30)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
   document.querySelector("#supply-count").textContent = `${formatNumber(records.length)} سجل`;
 }
 
@@ -412,7 +423,7 @@ function renderSupply() {
     ${pageHeading("التوريد", "راجع حد الطلب والكميات المقترحة حسب بيانات المصنف.", "تخطيط المخزون")}
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="supply-search" type="search" value="${escapeHtml(state.supplyQuery)}" placeholder="ابحث باسم الصنف أو الفئة" autocomplete="off" aria-label="ابحث في مقترحات التوريد"></label><span class="toolbar-meta" id="supply-count"></span></div>
     <section class="panel table-panel" id="supply-results" aria-live="polite"></section>
-    <p class="pharmacy-disclaimer">الكمية المقترحة محسوبة في ملف المصدر. راجع الاحتياج الفعلي والمورد قبل اعتماد أي طلب.</p>
+    <p class="pharmacy-disclaimer">الشرايط محسوبة كما في الملف، والعلب للشرايط تقديرية على أساس 10 شرائط لكل علبة. عدّل عدد الشرائط في العلبة حسب العبوة الفعلية قبل اعتماد أي طلب.</p>
   `;
   updateSupplyResults();
 }

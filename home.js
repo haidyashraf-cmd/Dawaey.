@@ -195,9 +195,9 @@ function nearbyPharmacyMarkup(record) {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
     const location = String(pharmacy["المنطقة / العنوان المتوقع"] ?? "").split(/\s*[-–/]\s*/).at(-1) ?? area;
-    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(location)} · مطابقة لمنطقتك</small><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
+    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(location)} · مطابقة لمنطقتك</small><span>اتصل للتأكد من توفر الدواء</span></div><a class="nearby-map" href="${pharmacyMapUrl(pharmacy)}" target="_blank" rel="noopener" aria-label="خريطة ${escapeHtml(pharmacy["اسم الصيدلية"])}">خريطة</a>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
   }).join("");
-  return `<section class="medicine-nearby"><div class="nearby-heading"><strong>فروع الدليل الأقرب حسب المنطقة</strong><span>${escapeHtml(area)}</span></div><div class="nearby-pharmacy-list">${pharmacies}</div><p class="nearby-caveat">الترتيب حسب المنطقة المسجلة، مش المسافة الدقيقة. ملف المصدر لا يربط مخزون الدواء بالفرع.</p></section>`;
+  return `<section class="medicine-nearby"><div class="nearby-heading"><strong>فروع الدليل الأقرب حسب المنطقة</strong><span>${escapeHtml(area)}</span></div><div class="nearby-pharmacy-list">${pharmacies}</div><button class="location-action gps-icon-button" type="button" data-open-nearby-map><span class="gps-icon" aria-hidden="true">⌖</span><span class="gps-label">عرض كل الصيدليات حولي</span></button><p class="nearby-caveat">الأرقام والعناوين المعروضة من دليل دوائي، وزر الخريطة يفتح الصيدليات الموجودة فعليًا حول موقعك.</p></section>`;
 }
 
 function renderAreaResults(query = "") {
@@ -479,7 +479,7 @@ function renderDonationResultsForItems(items, area) {
 function setupDonationAndAssistant() {
   const donationItems = document.querySelector("#donation-items");
   const addDonationItem = document.querySelector("#add-donation-item");
-  const itemTemplate = () => { const item = document.createElement("div"); item.className = "donation-item"; item.innerHTML = `<label>اسم الدواء أو الكود<input name="donation-medicine" type="search" placeholder="مثال: Panadol" required></label><label>الكمية<input name="donation-quantity" type="number" min="1" value="1" required></label><label>نوع الوحدة<select name="donation-unit"><option value="شريط">شريط</option><option value="علبة">علبة</option><option value="زجاجة">زجاجة / شراب</option><option value="أنبوبة">أنبوبة / مرهم</option><option value="كيس">كيس</option><option value="أمبول">أمبول</option><option value="فيال">فيال</option><option value="بخاخ">بخاخ</option><option value="قلم">قلم</option><option value="كبسولة">كبسولة</option><option value="وحدة">وحدة</option></select></label><button type="button" class="remove-donation-item" aria-label="حذف الصنف">×</button>`; return item; };
+  const itemTemplate = () => { const item = document.createElement("div"); item.className = "donation-item"; item.innerHTML = `<label>اسم الدواء أو الكود<input name="donation-medicine" type="search" placeholder="مثال: Panadol" required></label><label>الكمية<input name="donation-quantity" type="number" min="1" value="1" required></label><label>العبوة<select name="donation-unit"><option value="شريط">شريط</option><option value="علبة">علبة</option><option value="زجاجة">زجاجة / شراب</option><option value="أنبوبة">أنبوبة / مرهم</option><option value="أمبول">أمبول</option><option value="بخاخ">بخاخ</option><option value="قلم">قلم</option></select></label><button type="button" class="remove-donation-item" aria-label="حذف الصنف">×</button>`; return item; };
   const refreshRemoveButtons = () => donationItems?.querySelectorAll(".remove-donation-item").forEach((button) => { button.hidden = donationItems.children.length === 1; });
   addDonationItem?.addEventListener("click", () => { donationItems.appendChild(itemTemplate()); refreshRemoveButtons(); donationItems.lastElementChild.querySelector("input")?.focus(); });
   donationItems?.addEventListener("click", (event) => { if (event.target.closest(".remove-donation-item")) { event.target.closest(".donation-item").remove(); refreshRemoveButtons(); } });
@@ -591,9 +591,13 @@ function setupEvents() {
     }, () => showToast("الموقع غير متاح؛ اكتب المنطقة يدويًا"), { timeout: 7000, maximumAge: 60000 });
   });
   document.querySelector("#patient-notifications")?.addEventListener("click", () => {
-    if (state.user?.role === "patient") showToast("إشعارات قبول التبرعات تظهر هنا بعد وصول رد الصيدلية.");
-    else window.location.href = "auth.html";
+    const panel = document.querySelector("#notifications-panel");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) document.querySelector("#notification-empty").textContent = "لا توجد إشعارات جديدة حاليًا. ستظهر هنا نتيجة قبول أو رفض التبرع.";
   });
+  document.querySelector("#close-notifications")?.addEventListener("click", () => { document.querySelector("#notifications-panel").hidden = true; });
+  document.querySelector("#medicine-results")?.addEventListener("click", (event) => { if (event.target.closest("[data-open-nearby-map]")) openNearbyPharmacyMap(); });
   const openEmergency = () => document.querySelector("#emergency-dialog")?.showModal();
   document.querySelector("#emergency-top")?.addEventListener("click", openEmergency);
   document.querySelector("#emergency-button")?.addEventListener("click", openEmergency);

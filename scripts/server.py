@@ -431,6 +431,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
+    def end_headers(self) -> None:
+        path = urlsplit(self.path).path
+        if not path.startswith("/api/") and not path.startswith("/webhooks/"):
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
         if route == "/healthz":

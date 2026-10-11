@@ -55,6 +55,13 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
 
+function normalizeNationalId(value) {
+  return String(value ?? "")
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/\s+/g, "");
+}
+
 function normalize(value) {
   return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim();
 }
@@ -445,7 +452,7 @@ function renderDonationResultsForItems(items, area) {
   if (!container) return;
   const entries = getNearbyPharmacies(area).slice(0, 12);
   if (!items.length || !area) { container.innerHTML = "<p>أضف نوع دواء والمنطقة لعرض الصيدليات المسجلة.</p>"; return; }
-  const names = items.map((item) => `${escapeHtml(item.medicine)} (${formatNumber(item.quantity)} ${escapeHtml(item.unit)})`).join("، ");
+  const names = items.map((item) => `${escapeHtml(item.medicine)} (${numberFormat.format(Number(item.quantity) || 0)} ${escapeHtml(item.unit)})`).join("، ");
   if (!entries.length) { container.innerHTML = `<p>مش لاقيين صيدلية مسجلة في <strong>${escapeHtml(area)}</strong>.</p>`; return; }
   container.innerHTML = `<div class="donation-result-title"><strong>فروع قريبة للتواصل بخصوص: ${names}</strong><small>${numberFormat.format(entries.length)} فرعًا مطابقًا للمنطقة</small></div>` + entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
@@ -466,11 +473,15 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const area = document.querySelector("#donation-area").value.trim();
     const items = [...document.querySelectorAll(".donation-item")].map((row) => ({ medicine: row.querySelector('[name="donation-medicine"]').value.trim(), quantity: row.querySelector('[name="donation-quantity"]').value.trim() || "1", unit: row.querySelector('[name="donation-unit"]').value })).filter((item) => item.medicine);
+    const nationalIdField = document.querySelector("#donation-national-id");
+    const nationalId = normalizeNationalId(nationalIdField?.value);
+    if (nationalId && !/^\d{14}$/.test(nationalId)) { showToast("الرقم القومي يجب أن يتكون من ١٤ رقمًا."); nationalIdField?.focus(); return; }
     renderDonationResultsForItems(items, area);
     try {
-      const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, area }) });
+      const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, area, nationalId }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
+      if (nationalIdField) nationalIdField.value = "";
       document.querySelector("#donation-results")?.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل كل أصناف التبرع بالكمية والوحدة على الخادم.</p>');
     } catch (error) { showToast(error.message || "تعذر تسجيل طلب التبرع."); }
   });

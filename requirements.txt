@@ -1,1 +1,1 @@
-# Dawaey runtime uses only Python standard-library modules.
+cryptography>=44.0.0

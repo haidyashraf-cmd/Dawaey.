@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -20,6 +21,9 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data" / "dawaey-data.json"
 DATABASE_PATH = Path(os.environ.get("DAWAEY_DATABASE", ROOT / "data" / "dawaey-users.sqlite3"))
@@ -32,6 +36,11 @@ GEOCODE_LOCK = threading.Lock()
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
+NATIONAL_ID_ASSOCIATED_DATA = b"dawaey:national-id:v1"
+
+
+class NationalIdStorageUnavailable(RuntimeError):
+    pass
 
 
 def connect_database() -> sqlite3.Connection:
@@ -84,6 +93,8 @@ def initialize_database() -> None:
                 medicine TEXT NOT NULL,
                 area TEXT NOT NULL,
                 quantity TEXT NOT NULL,
+                unit TEXT NOT NULL DEFAULT 'وحدة',
+                national_id_encrypted TEXT,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'completed', 'rejected')),
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -92,6 +103,58 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
             """
         )
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)")}
+        if "unit" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN unit TEXT NOT NULL DEFAULT 'وحدة'")
+        if "national_id_encrypted" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN national_id_encrypted TEXT")
+
+
+def normalize_national_id(value: object) -> str:
+    digits = str(value or "").strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789"))
+    digits = re.sub(r"\s+", "", digits)
+    if not digits:
+        return ""
+    if not re.fullmatch(r"\d{14}", digits):
+        raise ValueError("الرقم القومي يجب أن يتكون من ١٤ رقمًا.")
+    return digits
+
+
+def national_id_encryption_key() -> bytes | None:
+    encoded = os.environ.get("DAWAEY_NATIONAL_ID_KEY", "").strip()
+    if not encoded:
+        return None
+    try:
+        key = base64.urlsafe_b64decode(encoded.encode("ascii"))
+    except (ValueError, UnicodeError) as error:
+        raise NationalIdStorageUnavailable("مفتاح تشفير الرقم القومي غير مضبوط.") from error
+    if len(key) != 32:
+        raise NationalIdStorageUnavailable("مفتاح تشفير الرقم القومي غير مضبوط.")
+    return key
+
+
+def encrypt_national_id(value: str) -> str:
+    key = national_id_encryption_key()
+    if key is None:
+        raise NationalIdStorageUnavailable("تخزين الرقم القومي غير مفعّل حاليًا.")
+    nonce = secrets.token_bytes(12)
+    encrypted = AESGCM(key).encrypt(nonce, value.encode("ascii"), NATIONAL_ID_ASSOCIATED_DATA)
+    return "v1:" + base64.urlsafe_b64encode(nonce + encrypted).decode("ascii")
+
+
+def decrypt_national_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        key = national_id_encryption_key()
+        if key is None or not value.startswith("v1:"):
+            return None
+        packed = base64.urlsafe_b64decode(value[3:].encode("ascii"))
+        if len(packed) < 28:
+            return None
+        return AESGCM(key).decrypt(packed[:12], packed[12:], NATIONAL_ID_ASSOCIATED_DATA).decode("ascii")
+    except (InvalidTag, NationalIdStorageUnavailable, ValueError, UnicodeError):
+        return None
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -439,6 +502,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.send_json(404, {"error": "المسار غير موجود."})
         except ValueError as error:
             self.send_json(400, {"error": str(error)})
+        except NationalIdStorageUnavailable:
+            self.send_json(503, {"error": "حفظ الرقم القومي غير مفعّل حاليًا. احذفي الرقم أو أعيدي المحاولة لاحقًا."})
         except sqlite3.IntegrityError as error:
             message = "رقم التواصل مسجل بالفعل. جرّب تسجيل الدخول."
             if "pharmacy_applications.license_number" in str(error):
@@ -460,40 +525,84 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         except ValueError as error:
             self.send_json(400, {"error": str(error)})
 
+    def require_approved_pharmacy(self) -> bool:
+        token = self.get_session_token()
+        if not token:
+            self.send_json(401, {"error": "يجب تسجيل الدخول بحساب صيدلية معتمد."})
+            return False
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+        with closing(connect_database()) as connection:
+            account = connection.execute(
+                "SELECT accounts.role, pharmacy_applications.status AS pharmacy_status "
+                "FROM sessions JOIN accounts ON accounts.id = sessions.account_id "
+                "LEFT JOIN pharmacy_applications ON pharmacy_applications.account_id = accounts.id "
+                "WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
+                (token_hash, int(time.time())),
+            ).fetchone()
+        if not account:
+            self.send_json(401, {"error": "انتهت الجلسة؛ سجّل الدخول مرة أخرى."})
+            return False
+        if account["role"] != "pharmacy":
+            self.send_json(403, {"error": "طلبات التبرع متاحة لحسابات الصيدليات المعتمدة فقط."})
+            return False
+        if account["pharmacy_status"] != "approved":
+            self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
+            return False
+        return True
+
     @staticmethod
-    def donation_public(row: sqlite3.Row) -> dict:
-        return {
+    def donation_public(row: sqlite3.Row, include_national_id: bool = False) -> dict:
+        request = {
             "id": row["id"],
             "medicine": row["medicine"],
             "area": row["area"],
             "quantity": row["quantity"],
+            "unit": row["unit"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
         }
+        if include_national_id:
+            request["nationalId"] = decrypt_national_id(row["national_id_encrypted"])
+        return request
 
     def handle_donations(self) -> None:
+        if not self.require_approved_pharmacy():
+            return
         with closing(connect_database()) as connection:
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
+                "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
-        self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
+        self.send_json(200, {"requests": [self.donation_public(row, include_national_id=True) for row in rows]})
 
     def handle_create_donation(self, payload: dict) -> None:
-        medicine = str(payload.get("medicine", "")).strip()
         area = str(payload.get("area", "")).strip()
-        quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
-        if not medicine or len(medicine) > 160:
-            raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
             raise ValueError("اكتب المنطقة بشكل صحيح.")
-        if len(quantity) > 40:
-            raise ValueError("الكمية غير صالحة.")
+        items = payload.get("items")
+        if items is None:
+            items = [{"medicine": payload.get("medicine"), "quantity": payload.get("quantity", "غير محددة"), "unit": payload.get("unit", "وحدة")}]
+        if not isinstance(items, list) or not 1 <= len(items) <= 20:
+            raise ValueError("أضف من نوع دواء واحد إلى ٢٠ نوعًا لكل طلب.")
+        validated_items = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("بيانات أحد أصناف التبرع غير صالحة.")
+            medicine = str(item.get("medicine", "")).strip()
+            quantity = str(item.get("quantity", "1")).strip() or "1"
+            unit = str(item.get("unit", "وحدة")).strip() or "وحدة"
+            if not medicine or len(medicine) > 160:
+                raise ValueError("اكتب اسم كل دواء أو الكود بشكل صحيح.")
+            if len(quantity) > 40 or len(unit) > 40:
+                raise ValueError("الكمية أو الوحدة غير صالحة.")
+            validated_items.append({"medicine": medicine, "quantity": quantity, "unit": unit})
+        national_id = normalize_national_id(payload.get("nationalId", ""))
+        national_id_encrypted = encrypt_national_id(national_id) if national_id else None
         now = int(time.time())
-        donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
         account_id = None
+        rows = []
         with closing(connect_database()) as connection, connection:
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
@@ -502,18 +611,24 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (token_hash, now),
                 ).fetchone()
                 account_id = account["account_id"] if account else None
-            connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, now, now),
-            )
-            row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
-                (donation_id,),
-            ).fetchone()
-        self.send_json(201, {"request": self.donation_public(row)})
+            for item in validated_items:
+                donation_id = f"don-{secrets.token_urlsafe(12)}"
+                connection.execute(
+                    "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id_encrypted, status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                    (donation_id, account_id, item["medicine"], area, item["quantity"], item["unit"], national_id_encrypted, now, now),
+                )
+                rows.append(connection.execute(
+                    "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
+                    "FROM donation_requests WHERE id = ?",
+                    (donation_id,),
+                ).fetchone())
+        requests = [self.donation_public(row) for row in rows]
+        self.send_json(201, {"request": requests[0], "requests": requests})
 
     def handle_update_donation(self, donation_id: str, payload: dict) -> None:
+        if not self.require_approved_pharmacy():
+            return
         status = str(payload.get("status", "")).strip()
         if status not in {"pending", "accepted", "completed", "rejected"}:
             raise ValueError("حالة طلب التبرع غير صالحة.")
@@ -527,10 +642,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
+                "FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
-        self.send_json(200, {"request": self.donation_public(row)})
+        self.send_json(200, {"request": self.donation_public(row, include_national_id=True)})
 
     def redirect_to_auth(self, error: str) -> None:
         self.send_response(302)

@@ -472,3 +472,9 @@ body { background: var(--paper); }
 .secondary-button { margin: 12px 0 4px; border: 1px solid rgba(21, 102, 116, .28); border-radius: 999px; padding: 10px 16px; color: #156674; background: transparent; cursor: pointer; font: inherit; font-weight: 700; }
 .donation-hint { margin: 0; color: #557078; font-size: .88rem; }
 @media (max-width: 700px) { .donation-item { grid-template-columns: 1fr 1fr; } .donation-item label:first-child { grid-column: 1 / -1; } .remove-donation-item { position: absolute; inset-inline-start: 8px; top: 8px; } }
+
+
+.location-action { display: inline-flex; align-items: center; justify-content: center; margin-top: 8px; padding: 8px 12px; border: 1px solid rgba(21,102,116,.22); border-radius: 999px; color: var(--teal-deep); background: var(--surface); font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.area-map-link { color: var(--teal-deep); font-size: 9px; font-weight: 800; text-decoration: none; }
+.area-map-link:hover { text-decoration: underline; }
+.bell-icon { font-size: 15px; line-height: 1; }

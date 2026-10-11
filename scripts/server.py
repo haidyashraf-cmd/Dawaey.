@@ -598,7 +598,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 raise ValueError("الكمية أو الوحدة غير صالحة.")
             validated_items.append({"medicine": medicine, "quantity": quantity, "unit": unit})
         national_id = normalize_national_id(payload.get("nationalId", ""))
-        national_id_encrypted = encrypt_national_id(national_id) if national_id else None
+        if not re.fullmatch(r"\d{14}", national_id):
+            raise ValueError("الرقم القومي مطلوب ويجب أن يتكون من ١٤ رقمًا.")
+        national_id_encrypted = encrypt_national_id(national_id)
         now = int(time.time())
         token = self.get_session_token()
         account_id = None

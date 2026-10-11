@@ -31,7 +31,7 @@ const state = {
 
 const numberFormat = new Intl.NumberFormat("ar-EG");
 const dateFormat = new Intl.DateTimeFormat("ar-EG", { weekday: "long", day: "numeric", month: "long" });
-const pageSize = 25;
+const pageSize = 10;
 const medicineAliases = new Map([["بنادول", "panadol"], ["بانادول", "panadol"], ["كتافلام", "cataflam"], ["كاتافلام", "cataflam"], ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["أدول", "adol"], ["ادول", "adol"], ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"], ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نيروفين", "nurofen"]]);
 function normalizeSearch(value) { return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim(); }
 const content = document.querySelector("#page-content");
@@ -65,10 +65,7 @@ function getInventory() {
 }
 
 function getSupply() {
-  const sheets = getSheets();
-  const supply = sheets[SHEET_NAMES.supply] ?? [];
-  const importedInventory = (sheets[SHEET_NAMES.inventory] ?? []).filter((record) => record["مصدر البيانات"] === "ملف الصيدلية");
-  return [...supply, ...importedInventory];
+  return getSheets()[SHEET_NAMES.supply] ?? [];
 }
 
 function getPharmacies() {
@@ -92,22 +89,6 @@ function getPharmacyGroups() {
 
 function getSupplyByNumber() {
   return new Map(getSupply().map((record) => [String(record["م"]), record]));
-}
-
-function medicineUnit(record) {
-  const value = String(record["وحدة القياس"] ?? record["الوحدة"] ?? "").trim();
-  return /^\d+$/.test(value) || !value ? "الوحدة غير محددة" : value;
-}
-
-function stripCount(record) {
-  return medicineUnit(record) === "شريط" ? numericValue(record["الكمية الحالية"] ?? record["الكمية"]) : 0;
-}
-
-function boxCount(record) {
-  const quantity = numericValue(record["الكمية الحالية"] ?? record["الكمية"]);
-  if (medicineUnit(record) === "علبة") return quantity;
-  if (medicineUnit(record) === "شريط") return Math.floor(quantity / 10);
-  return 0;
 }
 
 function getStockState(record) {
@@ -202,7 +183,7 @@ function renderOverview() {
       </article>
       <article class="panel">
         <div class="panel-heading"><div><h2>مقترحات التوريد</h2><p>أعلى الكميات المقترحة في الملف</p></div><span class="panel-kicker">${formatNumber(supply.length)} صنف</span></div>
-        <div class="supply-list">${suggested.map((record) => `<div class="supply-row"><div><strong>${escapeHtml(record["اسم الدواء"])}</strong><small>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</small></div><span class="supply-quantity">${formatNumber(record["كمية التوريد المقترحة"])} <small>${escapeHtml(medicineUnit(record))}</small></span></div>`).join("")}</div>
+        <div class="supply-list">${suggested.map((record) => `<div class="supply-row"><div><strong>${escapeHtml(record["اسم الدواء"])}</strong><small>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</small></div><span class="supply-quantity">${formatNumber(record["كمية التوريد المقترحة"])} <small>${escapeHtml(record["وحدة القياس"] || "وحدة")}</small></span></div>`).join("")}</div>
         <p class="panel-note"><span aria-hidden="true">i</span><span>الكميات المقترحة من ورقة التوريد، وليست طلبات شراء مؤكدة.</span></p>
       </article>
     </section>
@@ -248,7 +229,7 @@ function inventoryTableRows(records) {
   return records.map((record) => `<tr>
     <td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td>
     <td>${escapeHtml(record["الكود"] || "—")}</td>
-    <td class="number-cell">${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])} <span class="table-secondary">${escapeHtml(medicineUnit(record))}</span></td>
+    <td class="number-cell">${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])} <span class="table-secondary">${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span></td>
     <td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td>
     <td>${statusMarkup(getStockState(record))}</td>
     <td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td>
@@ -272,53 +253,11 @@ function updateInventoryResults() {
   if (count) count.textContent = `${formatNumber(results.length)} نتيجة`;
 }
 
-async function importPharmacyFile() {
-  const form = document.querySelector("#pharmacy-import-form");
-  const input = document.querySelector("#pharmacy-import-file");
-  const status = document.querySelector("#pharmacy-import-status");
-  const file = input?.files?.[0];
-  if (!file) {
-    if (status) {
-      status.textContent = "اختار ملف Excel بصيغة .xlsx أو ملف CSV أولًا.";
-      status.className = "import-status is-error";
-    }
-    return;
-  }
-  const button = form.querySelector("button[type=submit]");
-  button.disabled = true;
-  status.textContent = "جاري قراءة الملف وحفظ البيانات...";
-  status.className = "import-status is-loading";
-  try {
-    const response = await fetch("/api/pharmacy/import", { method: "POST", credentials: "same-origin", body: (() => { const data = new FormData(); data.append("file", file, file.name); return data; })() });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "تعذر استيراد الملف.");
-    const latest = await loadDashboardData();
-    state.data = latest;
-    state.inventoryQuery = "";
-    state.inventoryPage = 0;
-    const successMessage = payload.message || `تم استيراد ${payload.count} صف.`;
-    renderInventory();
-    const refreshedStatus = document.querySelector("#pharmacy-import-status");
-    if (refreshedStatus) {
-      refreshedStatus.textContent = `${successMessage} تم تحديث جدول المخزون.`;
-      refreshedStatus.className = "import-status is-success";
-    }
-    showToast(successMessage);
-  } catch (error) {
-    status.textContent = error.message || "تعذر استيراد الملف.";
-    status.className = "import-status is-error";
-  } finally {
-    button.disabled = false;
-    input.value = "";
-  }
-}
-
 function renderInventory() {
   const allCategories = getCategoryCounts().map(([category]) => category);
   const quickCategories = ["الكل", ...allCategories.slice(0, 5)];
   content.innerHTML = `
     ${pageHeading("الأدوية والمخزون", "ابحث في الأصناف المسجلة وراجع حالة المخزون وحدود التوريد.", "كتالوج دوائي")}
-    <section class="panel import-panel"><div><span class="panel-kicker">استيراد سريع</span><h2>ارفع ملف مخزون الصيدلية</h2><p>ارفع ملف Excel أو CSV، وستظهر صفوفه فورًا في لوحة المخزون ونتائج الموقع.</p></div><form id="pharmacy-import-form" class="import-form"><label class="file-picker"><span>اختيار ملف</span><input id="pharmacy-import-file" type="file" accept=".xlsx,.xlsm,.csv" required></label><button class="primary-button" type="submit">رفع وتشغيل البيانات</button></form><small class="import-hint">الصيغ المدعومة: .xlsx و .csv · حد أقصى 8 ميجابايت و5000 صف</small><p id="pharmacy-import-status" class="import-status" aria-live="polite"></p></section>
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="inventory-search" type="search" value="${escapeHtml(state.inventoryQuery)}" placeholder="اسم الدواء، الكود، أو الفئة" autocomplete="off" aria-label="ابحث في الأدوية"></label><span class="toolbar-meta">الكمية حسب ملف الأصناف والتوريد</span></div>
     <div class="filter-row" aria-label="تصفية حسب الفئة والحالة">
       ${quickCategories.map((category) => `<button class="filter-chip ${state.inventoryCategory === category ? "is-active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
@@ -366,8 +305,8 @@ function renderPharmacies() {
 function updateSupplyResults() {
   const query = state.supplyQuery.trim().toLocaleLowerCase();
   const records = getSupply().filter((record) => [record["اسم الدواء"], record["طبيعة الدواء"], record["حالة المخزون"]].join(" ").toLocaleLowerCase().includes(query));
-  const rows = records.slice(0, 30).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(stripCount(record))}</td><td class="number-cell">${formatNumber(boxCount(record))}</td><td>${escapeHtml(medicineUnit(record))}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td></tr>`).join("");
-  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الشرايط</th><th>العلب</th><th>الوحدة الأصلية</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 30 ? ` · عرض أول ${formatNumber(30)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
+  const rows = records.slice(0, 30).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(record["الكمية الحالية"])}</td><td>${escapeHtml(record["وحدة القياس"] || "—")}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td></tr>`).join("");
+  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الكمية الحالية</th><th>وحدة القياس</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 30 ? ` · عرض أول ${formatNumber(30)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
   document.querySelector("#supply-count").textContent = `${formatNumber(records.length)} سجل`;
 }
 
@@ -405,16 +344,14 @@ function renderConsumptionReports() {
   const rows = getSupply().map((record) => ({ record, ...getConsumptionValue(record) })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value);
   const total = rows.reduce((sum, row) => sum + row.value, 0);
   const estimated = rows.filter((row) => row.estimated).length;
-  const importedCount = getSupply().filter((record) => record["مصدر البيانات"] === "ملف الصيدلية").length;
   const top = rows[0];
   const month = new Intl.DateTimeFormat("ar-EG", { month: "long", year: "numeric" }).format(new Date());
-  const dataNote = importedCount ? `تم إدراج ${formatNumber(importedCount)} صنف من ملف الصيدلية المرفوع ضمن التقرير. ${estimated === rows.length ? "الأرقام تقديرية مبنية على كميات التوريد المقترحة." : "الأرقام تجمع بين الاستهلاك الفعلي والمؤشرات التقديرية."}` : estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف.";
-  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${dataNote}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي الوحدات</span><strong>${formatNumber(total)}</strong><small>مؤشر الشهر الحالي</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} وحدة${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الوحدات</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="5"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
+  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف."}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي الوحدات</span><strong>${formatNumber(total)}</strong><small>مؤشر الشهر الحالي</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} وحدة${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الوحدات</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="5"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function renderDonations() {
   const requests = getDonationRequests();
-  const cards = requests.length ? requests.map((request) => `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>National Id: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div><div class="donation-request-actions">${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
+  const cards = requests.length ? requests.map((request) => `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div><div class="donation-request-actions">${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
   content.innerHTML = `${pageHeading("طلبات التبرع بالأدوية", "راجع طلبات المرضى وحدد ما يمكن للصيدلية استقباله.", "خدمة المجتمع")}<div class="donation-dashboard-note"><strong>تنبيه مهم:</strong><span>تأكد من صلاحية الدواء وسلامة العبوة قبل القبول، وتواصل مع المتبرع خارج الموقع لتنسيق التسليم.</span></div><section class="donation-request-grid" id="donation-request-results">${cards}</section>`;
 }
 
@@ -423,7 +360,7 @@ function renderSupply() {
     ${pageHeading("التوريد", "راجع حد الطلب والكميات المقترحة حسب بيانات المصنف.", "تخطيط المخزون")}
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="supply-search" type="search" value="${escapeHtml(state.supplyQuery)}" placeholder="ابحث باسم الصنف أو الفئة" autocomplete="off" aria-label="ابحث في مقترحات التوريد"></label><span class="toolbar-meta" id="supply-count"></span></div>
     <section class="panel table-panel" id="supply-results" aria-live="polite"></section>
-    <p class="pharmacy-disclaimer">الشرايط محسوبة كما في الملف، والعلب للشرايط تقديرية على أساس 10 شرائط لكل علبة. عدّل عدد الشرائط في العلبة حسب العبوة الفعلية قبل اعتماد أي طلب.</p>
+    <p class="pharmacy-disclaimer">الكمية المقترحة محسوبة في ملف المصدر. راجع الاحتياج الفعلي والمورد قبل اعتماد أي طلب.</p>
   `;
   updateSupplyResults();
 }
@@ -632,11 +569,6 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-retry]")) startApp();
 });
 
-document.addEventListener("submit", (event) => {
-  if (!event.target.matches("#pharmacy-import-form")) return;
-  event.preventDefault();
-  importPharmacyFile();
-});
 document.addEventListener("input", (event) => {
   if (event.target.id === "inventory-search") {
     state.inventoryQuery = event.target.value;

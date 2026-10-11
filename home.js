@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, notificationTimer: null };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -56,7 +56,7 @@ function escapeHtml(value) {
 }
 
 function normalize(value) {
-  return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").trim();
+  return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim();
 }
 
 function showToast(message) {
@@ -83,13 +83,6 @@ function editDistance(left, right) {
   return previous[right.length];
 }
 
-function symptomPhraseMatches(query, phrase) {
-  const ignored = new Set(["في", "من", "عندي", "عند", "ب", "بـ", "و", "او", "أو", "مع", "على", "يا", "هو", "هي"]);
-  const clean = (value) => normalize(value).split(/\s+/).map((token) => token.replace(/^ال/, "")).filter((token) => token.length > 1 && !ignored.has(token));
-  const queryTokens = clean(query);
-  const phraseTokens = clean(phrase);
-  return phraseTokens.length > 0 && phraseTokens.every((token) => queryTokens.some((candidate) => candidate === token || candidate.includes(token) || token.includes(candidate)));
-}
 function findMatches(query) {
   const normalizedQuery = normalize(query);
   const aliasedQuery = normalize(aliases.get(normalizedQuery) ?? query);
@@ -104,12 +97,7 @@ function findMatches(query) {
     else if (`${name} ${category}`.includes(aliasedQuery)) score = 60;
     else if (aliasedQuery.length >= 4 && editDistance(name.split(" ")[0], aliasedQuery) <= (aliasedQuery.length > 7 ? 2 : 1)) score = 30;
     return { ...record, score };
-  }).filter((record) => record.score > 0).sort((left, right) => right.score - left.score || String(left["اسم الدواء"]).localeCompare(String(right["اسم الدواء"]))).slice(0, 100);
-}
-
-function medicineUnit(record) {
-  const value = String(record["وحدة القياس"] ?? record["الوحدة"] ?? "").trim();
-  return /^\d+$/.test(value) || !value ? "الوحدة غير محددة" : value;
+  }).filter((record) => record.score > 0).sort((left, right) => right.score - left.score || String(left["اسم الدواء"]).localeCompare(String(right["اسم الدواء"]))).slice(0, 30);
 }
 
 function getStatus(record) {
@@ -142,7 +130,7 @@ function renderMedicineCard(record) {
   return `<article class="medicine-result">
     <span class="medicine-glyph" aria-hidden="true"><i></i><b>Rx</b></span>
     <div class="medicine-main"><div class="medicine-title-row"><div><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
-      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} <b class="medicine-unit-badge">${escapeHtml(medicineUnit(record))}</b></span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
+      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
       <button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button>
     </div>
     ${nearby}
@@ -223,39 +211,9 @@ function renderNotifications() {
   const unread = state.notifications.filter((item) => !item.isRead).length;
   count.textContent = String(unread);
   count.hidden = unread === 0;
-  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
-    if (item.kind === "donation_accepted") {
-      return `<article class="notification-item donation-notification ${item.isRead ? "is-read" : ""}"><div class="notification-message-row"><div class="notification-message-copy"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></div><button type="button" class="notification-open-button" data-notification-open data-notification-id="${escapeHtml(item.id)}">عرض بيانات الصيدلية</button></div></article>`;
-    }
-    return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`;
-  }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
+  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
-async function markNotificationsRead() {
-  if (!state.notifications.some((item) => !item.isRead)) return;
-  state.notifications = state.notifications.map((item) => ({ ...item, isRead: true }));
-  renderNotifications();
-  try {
-    await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" });
-  } catch { /* The local state is already read; the next refresh retries from the server. */ }
-}
-function openPharmacyContact(notification) {
-  const dialog = document.querySelector("#pharmacy-contact-dialog");
-  if (!dialog) return;
-  const name = notification.pharmacyName || "الصيدلية";
-  const phone = String(notification.pharmacyPhone || "").replace(/[^0-9+]/g, "");
-  const address = notification.pharmacyAddress || notification.area || "العنوان غير مسجل";
-  const area = notification.area || "المنطقة غير مسجلة";
-  document.querySelector("#contact-pharmacy-name").textContent = name;
-  document.querySelector("#contact-pharmacy-message").textContent = `تم قبول تبرعك بدواء ${notification.medicine || "الدواء المطلوب"}. الصيدلية وافقت على الاستلام، وللتواصل معها استخدمي بيانات الاتصال الموجودة في رسالة القبول.`;
-  document.querySelector("#contact-pharmacy-address").textContent = `العنوان: ${address}`;
-  document.querySelector("#contact-pharmacy-area").textContent = `المنطقة: ${area}`;
-  document.querySelector("#contact-pharmacy-phone").textContent = phone ? `للتواصل: ${notification.pharmacyPhone}` : "للتواصل: رقم الهاتف غير مسجل";
-  const call = document.querySelector("#contact-pharmacy-call");
-  call.removeAttribute("hidden");
-  if (phone) { call.href = `tel:${phone}`; call.textContent = `اتصلي بالصيدلية: ${notification.pharmacyPhone}`; call.removeAttribute("aria-disabled"); call.classList.remove("is-disabled"); }
-  else { call.href = "#"; call.textContent = "رقم التواصل غير مسجل"; call.setAttribute("aria-disabled", "true"); call.classList.add("is-disabled"); }
-  dialog.showModal();
-}
+
 async function loadPatientData() {
   const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
   if (savedResponse.ok) {
@@ -330,8 +288,8 @@ function performSearch(query) {
 
 function renderMedicineResults() {
   const isPatient = state.user?.role === "patient";
-  const visibleMatches = isPatient ? state.matches : state.matches.slice(0, 20);
-  const guestNotice = !isPatient && state.matches.length > 20 ? '<div class="guest-limit-note">عرضنا أول ٢٠ نتيجة. <a href="auth.html">سجّل كمريض لعرض كل النتائج.</a></div>' : "";
+  const visibleMatches = isPatient ? state.matches : state.matches.slice(0, 5);
+  const guestNotice = !isPatient && state.matches.length > 5 ? '<div class="guest-limit-note">دي معاينة محدودة. <a href="auth.html">سجّل كمريض لعرض نتائج أكتر.</a></div>' : "";
   document.querySelector("#medicine-results").innerHTML = state.matches.length
     ? `${visibleMatches.map(renderMedicineCard).join("")}${guestNotice}`
     : `<div class="empty-results"><strong>مش لاقيين الدواء ده في ملف المصدر.</strong><br>جرّب اسمًا أو كودًا مختلفًا.</div>`;
@@ -407,6 +365,18 @@ function setupTabs() {
   }));
 }
 
+function setupDemo() {
+  const labels = { available: ["متاح", "متوفر"], low: ["كمية قليلة", "باقي كمية محدودة"], out: ["خلص", "غير متوفر"] };
+  document.querySelectorAll("[data-demo]").forEach((button) => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-demo]").forEach((item) => item.classList.toggle("is-active", item === button));
+    const [status, quantity] = labels[button.dataset.demo];
+    const statusBadge = document.querySelector("#demo-status");
+    statusBadge.textContent = status;
+    statusBadge.className = `demo-status ${button.dataset.demo === "available" ? "" : button.dataset.demo}`;
+    document.querySelector("#demo-quantity").textContent = quantity;
+  }));
+}
+
 function applyRoleVisibility() {
   const pharmacyOnly = state.user?.role === "patient";
   document.querySelectorAll("[data-pharmacy-only]").forEach((element) => {
@@ -461,68 +431,37 @@ function renderDonationResults(medicine, area) {
   }).join("");
 }
 
-function assistantMedicineCards(records) {
-  return records.map((record) => `<article class="assistant-medicine-card"><div><strong>${escapeHtml(record["اسم الدواء"] || "دواء")}</strong><small>${escapeHtml(record["المادة الفعالة"] || "المادة الفعالة غير محددة في السجل")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(record["اسم الدواء"] || "")}">عرض الدواء</button></article>`).join("");
-}
-function assistantQuickActions(actions) {
-  return `<div class="assistant-quick-actions">${actions.map(([label, prompt]) => `<button type="button" data-assistant-prompt="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`).join("")}</div>`;
-}
 function assistantReply(question) {
   const query = normalize(question);
-  if (/^(اهلا|أهلا|هاي|hello|hi|السلام عليكم|صباح الخير|مساء الخير)/i.test(question.trim())) return `أهلًا بيك! أنا مساعد دوائي. ${assistantQuickActions([["اسأل عن البرد", "عندي برد"], ["اسأل عن التهاب", "عندي التهاب"], ["ابحث عن دواء", "ابحث عن Panadol"]])}`;
-  if (query.includes("شكرا") || query.includes("متشكر")) return `العفو! أنا هنا أساعدك في فهم بيانات الدواء والبحث داخل الكتالوج. ${assistantQuickActions([["عندي عرض", "عندي صداع"], ["ابحث عن صيدلية", "أين أجد صيدلية في المعادي؟"]])}`;
-  if (query.includes("انت مين") || query.includes("بتعمل ايه") || query.includes("ممكن تساعد")) return `أنا مساعد دوائي أقدر أبحث في سجل الأدوية، أوضح المادة الفعالة، وأقترح فئة عامة مرتبطة بالحالة. لا أشخّص ولا أحدد جرعات، واسأل الصيدلي قبل الاستخدام. ${assistantQuickActions([["دواء للبرد", "عندي برد"], ["دواء للالتهاب", "عندي التهاب"], ["ابحث عن دواء", "ابحث عن Panadol"]])}`;
-  if (query.includes("سعر") || query.includes("بكام") || query.includes("تكلف")) return "الكتالوج الحالي لا يحتوي على أسعار. ابحث عن اسم الدواء ثم تواصل مع الصيدلية مباشرة لمعرفة السعر والتوفر.";
-  if (query.includes("جرع") || query.includes("كام قرص") || query.includes("اخد قد ايه")) return "لا أقدر أحدد جرعة أو عدد أقراص؛ الجرعة تعتمد على السن والحالة والأدوية الأخرى. ارجع لصيدلي أو طبيب، خصوصًا للأطفال وكبار السن.";
-  if (query.includes("حامل") || query.includes("حمل") || query.includes("طفل") || query.includes("رضيع") || query.includes("مزمن")) return "الحالة دي تحتاج سؤال الصيدلي أو الطبيب قبل أي دواء. ما تستخدمش اقتراحًا من المساعد بدون مراجعة المختص.";
   const medicine = getRecords().find((record) => {
     const name = normalize(record["اسم الدواء"]);
     return name && query.includes(name);
   }) || findMatches(question)[0];
-  if (medicine) return `<strong>لقيت الدواء في سجل دوائي</strong><div class="assistant-medicine-card"><div><strong>${escapeHtml(medicine["اسم الدواء"])}</strong><small>${escapeHtml(medicine["المادة الفعالة"] || "المادة الفعالة غير محددة في المصدر")}</small></div><button type="button" data-assistant-medicine="${escapeHtml(medicine["اسم الدواء"])}">عرض الدواء</button></div><small>البيانات إرشادية فقط؛ اسأل الصيدلي عن الملاءمة والجرعة.</small>`;
+  if (medicine) return `لقيت <strong>${escapeHtml(medicine["اسم الدواء"])}</strong>. المادة الفعالة المسجلة: <strong>${escapeHtml(medicine["المادة الفعالة"] || "غير محددة في المصدر")}</strong>، وتصنيفه: ${escapeHtml(medicine["طبيعة الدواء"] || "صنف دوائي")}. اسأل الصيدلي عن الملاءمة والجرعة.`;
 
-  if (query.includes("بديل") || query.includes("بدائل")) {
-    const match = findMatches(question)[0];
-    if (!match) return "اكتب اسم الدواء الذي تريد بديلًا له، وسأبحث عن نفس المادة الفعالة في السجل. وبعدها اسأل الصيدلي قبل الاستبدال.";
-    const ingredient = normalize(match["المادة الفعالة"]);
-    const alternatives = getRecords().filter((record) => ingredient && normalize(record["المادة الفعالة"]) === ingredient && normalize(record["اسم الدواء"]) !== normalize(match["اسم الدواء"])).slice(0, 4);
-    return alternatives.length ? `<strong>بدائل لها نفس المادة الفعالة المسجلة:</strong><div class="assistant-medicine-list">${assistantMedicineCards(alternatives)}</div><small>لا تبدّل الدواء إلا بعد سؤال الصيدلي.</small>` : "مش لاقي بديلًا بنفس المادة الفعالة في السجل. اسأل الصيدلي عن البدائل الآمنة.";
-  }
-  if (query.includes("مضاد حيوي") || query.includes("انتي بيوتك") || query.includes("مضاد حيوى")) return "المضاد الحيوي لا يُستخدم لمجرد البرد أو الالتهاب، ولازم يحدده الطبيب أو الصيدلي حسب السبب. اكتب اسم دواء محدد لو عايز تعرف مادته الفعالة.";
   const emergencySymptoms = ["ضيق تنفس", "صعوبة تنفس", "ألم صدر", "فقدان وعي", "نزيف شديد", "تشنج", "حساسية شديدة", "تورم الوجه"];
   if (emergencySymptoms.some((symptom) => query.includes(normalize(symptom)))) return "دي علامة تستدعي مساعدة عاجلة. لا تنتظر اقتراح دواء من الشات؛ اتصل بالإسعاف 123 أو توجّه لأقرب طوارئ فورًا.";
 
   const advice = [
-    { words: ["برد", "نزلة برد", "زكام", "إنفلونزا", "انفلونزا", "رشح", "انسداد الانف", "سيلان الانف"], category: "برد أو إنفلونزا", options: "يمكن سؤال الصيدلي عن أدوية البرد الموجودة في السجل مثل Congestal أو Flurest أو Cold Free", catalogNames: ["congestal", "flurest", "cold free", "paracetamol"] },
-    { words: ["التهاب", "التهابات", "التهاب عضلات", "التهاب مفاصل"], category: "التهاب أو ألم", options: "اسأل الصيدلي عن مضاد التهاب مناسب مثل Cataflam أو Brufen، ولا تبدأ مضادًا حيويًا من نفسك", catalogNames: ["cataflam", "brufen", "diclofenac", "ibuprofen"] },
-    { words: ["وجع معدة", "الم معدة", "ألم معدة", "وجع بطن", "الم بطن", "ألم بطن", "تقلصات المعدة"], category: "ألم أو وجع المعدة", options: "ألم المعدة له أسباب مختلفة؛ اسأل الصيدلي عن علاج مناسب، ولا تستخدم مسكنات عشوائيًا إذا الألم شديد أو مستمر", catalogNames: ["panadol", "adol"] },
-    { words: ["وجع سن", "الم سن", "ألم سن", "ضرس", "اسنان", "أسنان"], category: "ألم الأسنان", options: "يمكن سؤال الصيدلي عن مسكن مناسب مثل Panadol أو Cataflam، واحجز كشف أسنان لمعرفة السبب", catalogNames: ["panadol", "adol", "cataflam"] },
-    { words: ["وجع ظهر", "الم ظهر", "ألم ظهر", "ظهرى", "ظهري"], category: "ألم الظهر", options: "اسأل الصيدلي عن مسكن أو مضاد التهاب مناسب مثل Panadol أو Brufen، وتجنب الدواء إذا لديك مانع طبي", catalogNames: ["panadol", "adol", "brufen"] },
-    { words: ["دوخة", "دوار", "حاسس بدوخه", "عدم اتزان"], category: "دوخة أو عدم اتزان", options: "الدوخة لها أسباب متعددة؛ اجلس واشرب سوائل واسأل الصيدلي أو الطبيب قبل أي دواء", catalogNames: [] },
-    { words: ["امساك", "إمساك", "مش عارف ادخل الحمام"], category: "إمساك", options: "اسأل الصيدلي عن علاج مناسب للإمساك واشرب سوائل، واطلب تقييمًا إذا كان الألم شديدًا أو يوجد قيء", catalogNames: [] },
-    { words: ["طفح", "حساسية جلد", "حكة جلد", "حكه جلد", "احمرار الجلد"], category: "طفح أو حساسية جلدية", options: "اسأل الصيدلي عن علاج مناسب للحساسية، وتجنب السبب المحتمل ولا تستخدم كريمًا مجهولًا", catalogNames: ["cetirizine", "loratadine", "claritine"] },
-    { words: ["وجع اذن", "ألم اذن", "الم اذن", "ودني", "أذني"], category: "ألم الأذن", options: "ألم الأذن يحتاج سؤال الصيدلي أو الطبيب، ولا تضع قطرات بدون معرفة سبب الألم", catalogNames: [] },
-    { words: ["حرقان بول", "الم في البول", "ألم عند التبول", "التهاب بول"], category: "ألم أو حرقان أثناء التبول", options: "اسأل الطبيب أو الصيدلي لعمل التقييم المناسب، ولا تبدأ مضادًا حيويًا من نفسك", catalogNames: [] },
-    { words: ["الدورة", "دورة شهرية", "الم الدورة", "ألم الدورة", "تقلصات الدورة"], category: "ألم الدورة الشهرية", options: "يمكن سؤال الصيدلي عن مسكن مناسب مثل Panadol أو Cataflam بعد التأكد من عدم وجود مانع", catalogNames: ["panadol", "adol", "cataflam"] },
-    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
-    { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة", catalogNames: ["panadol", "adol", "paracetamol", "fevadol"] },
-    { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام", catalogNames: ["cetirizine", "loratadine", "claritine", "claritin", "telfast"] },
+    { words: ["صداع", "وجع راس", "رأس", "الم راس", "ألم راس"], category: "ألم أو صداع", options: "من الخيارات الشائعة التي يمكن سؤال الصيدلي عنها: باراسيتامول مثل Panadol أو Adol، إذا لم يوجد مانع للاستخدام" },
+    { words: ["حراره", "سخنيه", "حمى", "سخونه", "درجة الحرارة"], category: "حرارة أو حمى", options: "يمكن سؤال الصيدلي عن باراسيتامول مثل Panadol أو Adol بعد قياس الحرارة" },
+    { words: ["حساسيه", "رشح", "عطس", "حكة", "حكه", "انسداد الانف"], category: "حساسية أو رشح", options: "يمكن سؤال الصيدلي عن سيتريزين أو لوراتادين، مع التأكد من عدم وجود مانع للاستخدام" },
     { words: ["حموضه", "حرقان", "ارتجاع", "معدة", "المعدة"], category: "حموضة أو ارتجاع", options: "يمكن سؤال الصيدلي عن أدوية الحموضة مثل أوميبرازول أو مضاد حموضة مناسب" },
     { words: ["كحه", "كحة", "بلغم", "سعال"], category: "كحة أو سعال", options: "اسأل الصيدلي عن علاج مناسب حسب كون الكحة جافة أو مصحوبة ببلغم؛ لا تستخدم مضادًا حيويًا من نفسك" },
-    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن"], category: "مغص أو تقلصات", options: "اسأل الصيدلي عن دواء مناسب لمضاد التقلصات، لكن ألم البطن المستمر يحتاج تقييم السبب أولًا", catalogNames: [] },
+    { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن", "وجع بطن"], category: "مغص أو تقلصات", options: "يمكن سؤال الصيدلي عن هيوسين بيوتيل بروميد مثل Buscopan للتقلصات، لكن ألم البطن المستمر أو الشديد يحتاج تقييم السبب أولًا" },
     { words: ["التهاب حلق", "زور", "حلق", "الم حلق", "ألم حلق"], category: "ألم أو التهاب الحلق", options: "يمكن سؤال الصيدلي عن أقراص استحلاب ومسكن مناسب، ولا تبدأ مضادًا حيويًا دون كشف" },
     { words: ["غثيان", "ترجيع", "قيء"], category: "غثيان أو قيء", options: "اسأل الصيدلي عن خيار مناسب، واهتم بالسوائل؛ القيء المتكرر أو المصحوب بدم يحتاج طوارئ" },
     { words: ["اسهال", "إسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
   ];
-  const matched = advice.find((item) => item.words.some((word) => symptomPhraseMatches(question, word)));
+  const matched = advice.find((item) => item.words.some((word) => query.includes(normalize(word))));
   if (matched) {
     const tokens = matched.options.split(/مثل|أو|،/).map((token) => normalize(token)).filter((token) => token.length > 3);
     const catalog = getRecords().filter((record) => {
       const text = `${normalize(record["اسم الدواء"])} ${normalize(record["طبيعة الدواء"])} ${normalize(record["المادة الفعالة"])}`;
-      return (matched.catalogNames || []).some((name) => text.includes(normalize(name))) || text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
+      return text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
-    if (!catalog.length) return `<strong>فهمت إن عندك ${escapeHtml(matched.category)}</strong><br>مش لاقي دواء مناسب للعرض ده في كتالوج دوائي الحالي. <strong>الأفضل ترجع لصيدلي</strong> عشان يحدد السبب والدواء المناسب، خصوصًا لو العرض مستمر أو شديد.<br><small>المساعد لا يشخّص ولا يحدد جرعات.</small>`;
-    return `<strong>فهمت إن عندك ${escapeHtml(matched.category)}</strong><br>${escapeHtml(matched.options)}، ودي أدوية لقيتها في سجل دوائي:<div class="assistant-medicine-list">${assistantMedicineCards(catalog)}</div><small>اختار دواء لعرض بياناته. الاقتراح لا يغني عن سؤال الصيدلي ولا يحدد جرعة.</small>`;
+    const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
+    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>خيارات عامة تسأل عنها الصيدلي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
   }
   const areaMatch = question.match(/(?:في|بـ|ب|منطقة)\s+(.+)/i);
   if (query.includes("صيدلي") || query.includes("فرع") || query.includes("عنوان")) {
@@ -532,9 +471,7 @@ function assistantReply(question) {
     return "اكتب اسم المنطقة أو المحافظة بشكل أوضح، وسأبحث في دليل الفروع المسجلة.";
   }
   if (query.includes("جرع") || query.includes("تشخيص")) return "أقدر أوضح بيانات الدواء وأقترح فئة عامة فقط، لكن لا أحدد جرعة أو أشخّص. اسأل طبيبًا أو صيدليًا، ولو الحالة طارئة اتصل بـ123.";
-  const symptomText = question.replace(/^(انا|أنا)?\s*(عندي|عندي احساس ب|حاسس ب|حاسه ب|اشعر ب|أشعر ب|بعاني من|أعاني من)\s*/i, "").trim();
-  if (symptomText.length > 2) return `فهمت إنك بتسأل عن <strong>${escapeHtml(symptomText)}</strong>، لكن مش لاقي له دواء واضح في سجل دوائي. الأفضل ترجع لصيدلي يحدد السبب والعلاج المناسب، خصوصًا لو العرض جديد أو شديد. ${assistantQuickActions([["اسأل عن البرد", "عندي برد"], ["اسأل عن الالتهاب", "عندي التهاب"], ["اكتب سؤالًا آخر", "ممكن تساعدني؟"]])}`;
-  return `اكتب اسم الدواء أو صف الحالة بطريقتك، وأنا أبحث في السجل وأقولك إمتى تحتاج ترجع لصيدلي. ${assistantQuickActions([["عندي برد", "عندي برد"], ["عندي التهاب", "عندي التهاب"], ["ابحث عن صيدلية", "أين أجد صيدلية في المعادي؟"]])}`;
+  return "أقدر أساعدك في البحث عن دواء، المادة الفعالة، شكوى عامة مثل الصداع أو الحموضة، أو صيدلية حسب المنطقة. اكتب الأعراض بالتفصيل بدون بيانات شخصية.";
 }
 function addAssistantMessage(text, kind) {
   const messages = document.querySelector("#assistant-messages");
@@ -547,109 +484,28 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
-    const quantityValue = document.querySelector("#donation-quantity").value.trim();
-    const unit = document.querySelector("#donation-unit").value;
-    const nationalId = document.querySelector("#donation-national-id").value.replace(/[^0-9٠-٩]/g, "").trim();
-    const quantity = quantityValue || "غير محددة";
-    if (!/^[0-9٠-٩]{14}$/.test(nationalId)) {
-      document.querySelector("#donation-national-id").setCustomValidity("National Id مطلوب ويجب أن يتكون من 14 رقمًا.");
-      document.querySelector("#donation-national-id").reportValidity();
-      showToast("National Id إجباري ومكوّن من 14 رقمًا.");
-      return;
-    }
-    document.querySelector("#donation-national-id").setCustomValidity("");
-    if (state.user?.role !== "patient") {
-      document.querySelector("#donation-results").innerHTML = '<p class="donation-saved-note">سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار عند قبول الصيدلية للتبرع. <a href="auth.html">تسجيل الدخول</a></p>';
-      return;
-    }
+    const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
     renderDonationResults(medicine, area);
     try {
       const response = await fetch("/api/donations", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine, area, quantity, unit, nationalId }),
+        body: JSON.stringify({ medicine, area, quantity }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
       const notice = document.querySelector("#donation-results");
-      notice.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل طلب التبرع على الخادم وسيظهر للصيدليات من أي جهاز.</p>');
+      notice.insertAdjacentHTML("afterbegin", `<p class="donation-saved-note"><strong>تم حفظ التبرع بنجاح.</strong> رقم الطلب: <strong>${escapeHtml(payload.request?.id || "سيظهر للصيدلية")}</strong> — سيظهر للصيدليات المعتمدة، وعند القبول سيصلك إشعار في حسابك.</p>`);
     } catch (error) {
       showToast(error.message || "تعذر تسجيل طلب التبرع.");
     }
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
-  document.querySelector("#assistant-messages")?.addEventListener("click", (event) => {
-    const quickButton = event.target.closest("[data-assistant-prompt]");
-    if (quickButton) {
-      const input = document.querySelector("#assistant-input");
-      input.value = quickButton.dataset.assistantPrompt;
-      input.focus();
-      return;
-    }
-    const medicineButton = event.target.closest("[data-assistant-medicine]");
-    if (!medicineButton) return;
-    const medicineName = medicineButton.dataset.assistantMedicine;
-    document.querySelector("#medicine-search").value = medicineName;
-    performSearch(medicineName);
-    document.querySelector("#search-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    addAssistantMessage(`فتحت نتيجة <strong>${escapeHtml(medicineName)}</strong> في البحث. راجع بياناته واسأل الصيدلي قبل الاستخدام.`, "assistant");
-  });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));
 }
 
-function renderAccountProfile() {
-  const profile = document.querySelector("#account-profile");
-  const loginLink = document.querySelector(".login-link");
-  if (!profile || !loginLink) return;
-  if (!state.user) {
-    profile.hidden = true;
-    loginLink.textContent = "دخول / حساب جديد";
-    loginLink.href = "auth.html";
-    loginLink.removeAttribute("aria-expanded");
-    return;
-  }
-  document.querySelector("#profile-name").textContent = state.user.name || "المستخدم";
-  document.querySelector("#profile-role").textContent = state.user.role === "pharmacy" ? "حساب صيدلية" : "حساب مريض";
-  document.querySelector("#profile-status").textContent = state.user.role === "pharmacy" ? "الحساب مسجل وينتظر المراجعة" : "الحساب مسجل الدخول";
-  loginLink.textContent = state.user.name || "حسابي";
-  loginLink.href = "#account-profile";
-  loginLink.setAttribute("aria-expanded", String(!profile.hidden));
-}
-
-async function logoutFromProfile() {
-  try {
-    const response = await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
-    if (!response.ok) throw new Error("تعذر تسجيل الخروج.");
-    state.user = null;
-    state.notifications = [];
-    state.saved = new Set();
-    document.querySelector("#patient-notifications")?.setAttribute("hidden", "");
-    document.querySelector("#account-profile").hidden = true;
-    renderAccountProfile();
-    updateSavedList();
-    window.location.href = "auth.html";
-  } catch (error) {
-    showToast(error.message || "تعذر تسجيل الخروج.");
-  }
-}
-
 function setupEvents() {
-  const loginLink = document.querySelector(".login-link");
-  const profile = document.querySelector("#account-profile");
-  loginLink?.addEventListener("click", (event) => {
-    if (!state.user) return;
-    event.preventDefault();
-    profile.hidden = !profile.hidden;
-    loginLink.setAttribute("aria-expanded", String(!profile.hidden));
-  });
-  document.querySelector("#profile-logout")?.addEventListener("click", logoutFromProfile);
-  document.addEventListener("click", (event) => {
-    if (state.user && !event.target.closest("#account-profile, .login-link")) {
-      profile.hidden = true;
-      loginLink.setAttribute("aria-expanded", "false");
-    }
-  });
   document.querySelector("#medicine-search-form").addEventListener("submit", (event) => { event.preventDefault(); performSearch(searchInput.value); });
   document.querySelector("#web-search-arabic")?.addEventListener("click", () => {
     const query = searchInput.value.trim();
@@ -733,27 +589,8 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     const button = document.querySelector("#patient-notifications");
     const opening = panel?.hasAttribute("hidden");
-    if (opening) {
-      panel?.removeAttribute("hidden");
-      button?.setAttribute("aria-expanded", "true");
-      if (state.user?.role === "patient") {
-        await loadPatientData();
-        renderNotifications();
-      }
-      await markNotificationsRead();
-    } else {
-      panel?.setAttribute("hidden", "");
-      button?.setAttribute("aria-expanded", "false");
-    }
-  });
-  document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
-    const card = event.target.closest("[data-notification-open]");
-    if (!card) return;
-    const notification = state.notifications.find((item) => String(item.id) === String(card.dataset.notificationId));
-    if (!notification) return;
-    document.querySelector("#notifications-panel")?.setAttribute("hidden", "");
-    document.querySelector("#patient-notifications")?.setAttribute("aria-expanded", "false");
-    openPharmacyContact(notification);
+    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
+    else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
@@ -838,30 +675,18 @@ async function start() {
     renderAreaResults();
     const loginLink = document.querySelector(".login-link");
     if (loginLink && state.user) {
+      loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
-      renderAccountProfile();
+      loginLink.href = "#my-medicines";
     }
-    if (state.user?.role === "patient") {
-      await loadPatientData();
-      renderNotifications();
-      window.clearInterval(state.notificationTimer);
-      const refreshPatientNotifications = async () => {
-        if (document.visibilityState === "hidden") return;
-        await loadPatientData();
-        renderNotifications();
-      };
-      state.notificationTimer = window.setInterval(refreshPatientNotifications, 1000);
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") refreshPatientNotifications();
-      });
-      window.addEventListener("focus", refreshPatientNotifications);
-    }
+    if (state.user?.role === "patient") { await loadPatientData(); renderNotifications(); }
     applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");
   }
   applyRoleVisibility();
   setupTabs();
+  setupDemo();
   setupObservers();
   setupEvents();
   setupDonationAndAssistant();

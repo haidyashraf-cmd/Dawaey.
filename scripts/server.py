@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -21,9 +20,6 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data" / "dawaey-data.json"
 DATABASE_PATH = Path(os.environ.get("DAWAEY_DATABASE", ROOT / "data" / "dawaey-users.sqlite3"))
@@ -36,11 +32,6 @@ GEOCODE_LOCK = threading.Lock()
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
-NATIONAL_ID_ASSOCIATED_DATA = b"dawaey:national-id:v1"
-
-
-class NationalIdStorageUnavailable(RuntimeError):
-    pass
 
 
 def connect_database() -> sqlite3.Connection:
@@ -79,6 +70,8 @@ def initialize_database() -> None:
                 district TEXT NOT NULL,
                 opening_hours TEXT NOT NULL,
                 whatsapp TEXT NOT NULL,
+                latitude REAL,
+                longitude REAL,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -93,74 +86,20 @@ def initialize_database() -> None:
                 medicine TEXT NOT NULL,
                 area TEXT NOT NULL,
                 quantity TEXT NOT NULL,
-                unit TEXT NOT NULL DEFAULT 'وحدة',
-                national_id_encrypted TEXT,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'completed', 'rejected')),
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS donation_status ON donation_requests(status);
             CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
-            CREATE TABLE IF NOT EXISTS donation_pharmacy_responses (
-                donation_id TEXT PRIMARY KEY REFERENCES donation_requests(id) ON DELETE CASCADE,
-                pharmacy_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                status TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
             """
         )
-        columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)")}
-        if "unit" not in columns:
-            connection.execute("ALTER TABLE donation_requests ADD COLUMN unit TEXT NOT NULL DEFAULT 'وحدة'")
-        if "national_id_encrypted" not in columns:
-            connection.execute("ALTER TABLE donation_requests ADD COLUMN national_id_encrypted TEXT")
-
-
-def normalize_national_id(value: object) -> str:
-    digits = str(value or "").strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789"))
-    digits = re.sub(r"\s+", "", digits)
-    if not digits:
-        return ""
-    if not re.fullmatch(r"\d{14}", digits):
-        raise ValueError("الرقم القومي يجب أن يتكون من ١٤ رقمًا.")
-    return digits
-
-
-def national_id_encryption_key() -> bytes | None:
-    encoded = os.environ.get("DAWAEY_NATIONAL_ID_KEY", "").strip()
-    if not encoded:
-        return None
-    try:
-        key = base64.urlsafe_b64decode(encoded.encode("ascii"))
-    except (ValueError, UnicodeError) as error:
-        raise NationalIdStorageUnavailable("مفتاح تشفير الرقم القومي غير مضبوط.") from error
-    if len(key) != 32:
-        raise NationalIdStorageUnavailable("مفتاح تشفير الرقم القومي غير مضبوط.")
-    return key
-
-
-def encrypt_national_id(value: str) -> str:
-    key = national_id_encryption_key()
-    if key is None:
-        raise NationalIdStorageUnavailable("تخزين الرقم القومي غير مفعّل حاليًا.")
-    nonce = secrets.token_bytes(12)
-    encrypted = AESGCM(key).encrypt(nonce, value.encode("ascii"), NATIONAL_ID_ASSOCIATED_DATA)
-    return "v1:" + base64.urlsafe_b64encode(nonce + encrypted).decode("ascii")
-
-
-def decrypt_national_id(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        key = national_id_encryption_key()
-        if key is None or not value.startswith("v1:"):
-            return None
-        packed = base64.urlsafe_b64decode(value[3:].encode("ascii"))
-        if len(packed) < 28:
-            return None
-        return AESGCM(key).decrypt(packed[:12], packed[12:], NATIONAL_ID_ASSOCIATED_DATA).decode("ascii")
-    except (InvalidTag, NationalIdStorageUnavailable, ValueError, UnicodeError):
-        return None
+        # Backward-compatible migration for databases created before GPS support.
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
+        if "latitude" not in columns:
+            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
+        if "longitude" not in columns:
+            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN longitude REAL")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -437,16 +376,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
-    def end_headers(self) -> None:
-        path = urlsplit(self.path).path
-        if not path.startswith("/api/") and not path.startswith("/webhooks/"):
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("Expires", "0")
-            if path in {"/", "/index.html", "/auth.html", "/pharmacy.html"}:
-                self.send_header("Clear-Site-Data", '"cache"')
-        super().end_headers()
-
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
         if route == "/healthz":
@@ -479,9 +408,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         if route == "/api/donations":
             self.handle_donations()
-            return
-        if route == "/api/notifications":
-            self.handle_notifications()
             return
         if route == "/webhooks/whatsapp":
             self.handle_whatsapp_verification()
@@ -521,8 +447,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.send_json(404, {"error": "المسار غير موجود."})
         except ValueError as error:
             self.send_json(400, {"error": str(error)})
-        except NationalIdStorageUnavailable:
-            self.send_json(503, {"error": "حفظ الرقم القومي غير مفعّل حاليًا. احذفي الرقم أو أعيدي المحاولة لاحقًا."})
         except sqlite3.IntegrityError as error:
             message = "رقم التواصل مسجل بالفعل. جرّب تسجيل الدخول."
             if "pharmacy_applications.license_number" in str(error):
@@ -544,114 +468,60 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         except ValueError as error:
             self.send_json(400, {"error": str(error)})
 
-    def require_approved_pharmacy(self) -> bool:
-        token = self.get_session_token()
-        if not token:
-            self.send_json(401, {"error": "يجب تسجيل الدخول بحساب صيدلية معتمد."})
-            return False
-        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
-        with closing(connect_database()) as connection:
-            account = connection.execute(
-                "SELECT accounts.role, pharmacy_applications.status AS pharmacy_status "
-                "FROM sessions JOIN accounts ON accounts.id = sessions.account_id "
-                "LEFT JOIN pharmacy_applications ON pharmacy_applications.account_id = accounts.id "
-                "WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
-                (token_hash, int(time.time())),
-            ).fetchone()
-        if not account:
-            self.send_json(401, {"error": "انتهت الجلسة؛ سجّل الدخول مرة أخرى."})
-            return False
-        if account["role"] != "pharmacy":
-            self.send_json(403, {"error": "طلبات التبرع متاحة لحسابات الصيدليات المعتمدة فقط."})
-            return False
-        if account["pharmacy_status"] != "approved":
-            self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
-            return False
-        return True
-
     @staticmethod
-    def donation_public(row: sqlite3.Row, include_national_id: bool = False) -> dict:
-        request = {
+    def donation_public(row: sqlite3.Row) -> dict:
+        return {
             "id": row["id"],
             "medicine": row["medicine"],
             "area": row["area"],
             "quantity": row["quantity"],
-            "unit": row["unit"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
         }
-        if include_national_id:
-            request["nationalId"] = decrypt_national_id(row["national_id_encrypted"])
-        return request
 
     def handle_donations(self) -> None:
-        if not self.require_approved_pharmacy():
-            return
         with closing(connect_database()) as connection:
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
-        self.send_json(200, {"requests": [self.donation_public(row, include_national_id=True) for row in rows]})
-
-    def handle_notifications(self) -> None:
-        token = self.get_session_token()
-        if not token:
-            self.send_json(401, {"error": "سجّل دخولك كمريض أولًا."})
-            return
-        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
-        with closing(connect_database()) as connection:
-            account = connection.execute("SELECT account_id FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE token_hash = ? AND expires_at > ? AND accounts.role = 'patient'", (token_hash, int(time.time()))).fetchone()
-            if not account:
-                self.send_json(403, {"error": "الإشعارات متاحة لحسابات المرضى فقط."})
-                return
-            rows = connection.execute("""
-                SELECT dr.id, dr.medicine, dr.area, dr.quantity, dr.unit, dr.updated_at,
-                       dpr.status, pa.pharmacy_name, pa.address, pa.district, a.contact
-                FROM donation_requests dr
-                JOIN donation_pharmacy_responses dpr ON dpr.donation_id = dr.id
-                JOIN pharmacy_applications pa ON pa.account_id = dpr.pharmacy_account_id
-                JOIN accounts a ON a.id = dpr.pharmacy_account_id
-                WHERE dr.account_id = ? AND dpr.status IN ('accepted','rejected','completed')
-                ORDER BY dpr.updated_at DESC LIMIT 50
-            """, (account["account_id"],)).fetchall()
-        notifications = []
-        for row in rows:
-            address = row["address"] or row["district"] or row["area"]
-            query = urllib.parse.quote(f"{row['pharmacy_name']} {address} مصر")
-            notifications.append({"id": row["id"], "medicine": row["medicine"], "quantity": row["quantity"], "unit": row["unit"], "status": row["status"], "pharmacyName": row["pharmacy_name"], "pharmacyAddress": address, "pharmacyArea": row["district"], "pharmacyPhone": row["contact"], "mapUrl": f"https://www.google.com/maps/search/?api=1&query={query}", "updatedAt": row["updated_at"]})
-        self.send_json(200, {"notifications": notifications})
+        self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
 
     def handle_create_donation(self, payload: dict) -> None:
         area = str(payload.get("area", "")).strip()
+        raw_items = payload.get("items")
+        if isinstance(raw_items, list):
+            items = []
+            for raw in raw_items[:12]:
+                if not isinstance(raw, dict):
+                    continue
+                medicine_item = str(raw.get("medicine", "")).strip()
+                quantity_item = str(raw.get("quantity", "1")).strip() or "1"
+                unit_item = str(raw.get("unit", "وحدة")).strip() or "وحدة"
+                if medicine_item:
+                    if len(medicine_item) > 120 or len(quantity_item) > 20 or len(unit_item) > 30:
+                        raise ValueError("راجع اسم الدواء أو الكمية أو الوحدة.")
+                    if not re.fullmatch(r"\d+(?:[.,]\d+)?", quantity_item):
+                        raise ValueError("الكمية لازم تكون رقمًا صحيحًا أو عشريًا.")
+                    items.append((medicine_item, quantity_item, unit_item))
+            if not items:
+                raise ValueError("أضف نوع دواء واحدًا على الأقل.")
+            medicine = "، ".join(item[0] for item in items)
+            quantity = "، ".join(f"{item[1]} {item[2]}" for item in items)
+        else:
+            medicine = str(payload.get("medicine", "")).strip()
+            quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
+        if not medicine or len(medicine) > 500:
+            raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
             raise ValueError("اكتب المنطقة بشكل صحيح.")
-        items = payload.get("items")
-        if items is None:
-            items = [{"medicine": payload.get("medicine"), "quantity": payload.get("quantity", "غير محددة"), "unit": payload.get("unit", "وحدة")}]
-        if not isinstance(items, list) or not 1 <= len(items) <= 20:
-            raise ValueError("أضف من نوع دواء واحد إلى ٢٠ نوعًا لكل طلب.")
-        validated_items = []
-        for item in items:
-            if not isinstance(item, dict):
-                raise ValueError("بيانات أحد أصناف التبرع غير صالحة.")
-            medicine = str(item.get("medicine", "")).strip()
-            quantity = str(item.get("quantity", "1")).strip() or "1"
-            unit = str(item.get("unit", "وحدة")).strip() or "وحدة"
-            if not medicine or len(medicine) > 160:
-                raise ValueError("اكتب اسم كل دواء أو الكود بشكل صحيح.")
-            if len(quantity) > 40 or len(unit) > 40:
-                raise ValueError("الكمية أو الوحدة غير صالحة.")
-            validated_items.append({"medicine": medicine, "quantity": quantity, "unit": unit})
-        national_id = normalize_national_id(payload.get("nationalId", ""))
-        if not re.fullmatch(r"\d{14}", national_id):
-            raise ValueError("الرقم القومي مطلوب ويجب أن يتكون من ١٤ رقمًا.")
-        national_id_encrypted = encrypt_national_id(national_id)
+        if len(quantity) > 500:
+            raise ValueError("الكمية غير صالحة.")
         now = int(time.time())
+        donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
         account_id = None
-        rows = []
         with closing(connect_database()) as connection, connection:
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
@@ -660,35 +530,23 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (token_hash, now),
                 ).fetchone()
                 account_id = account["account_id"] if account else None
-            for item in validated_items:
-                donation_id = f"don-{secrets.token_urlsafe(12)}"
-                connection.execute(
-                    "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id_encrypted, status, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                    (donation_id, account_id, item["medicine"], area, item["quantity"], item["unit"], national_id_encrypted, now, now),
-                )
-                rows.append(connection.execute(
-                    "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
-                    "FROM donation_requests WHERE id = ?",
-                    (donation_id,),
-                ).fetchone())
-        requests = [self.donation_public(row) for row in rows]
-        self.send_json(201, {"request": requests[0], "requests": requests})
+            connection.execute(
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, now, now),
+            )
+            row = connection.execute(
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                (donation_id,),
+            ).fetchone()
+        self.send_json(201, {"request": self.donation_public(row)})
 
     def handle_update_donation(self, donation_id: str, payload: dict) -> None:
-        if not self.require_approved_pharmacy():
-            return
         status = str(payload.get("status", "")).strip()
         if status not in {"pending", "accepted", "completed", "rejected"}:
             raise ValueError("حالة طلب التبرع غير صالحة.")
         now = int(time.time())
-        token = self.get_session_token()
-        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest() if token else ""
         with closing(connect_database()) as connection, connection:
-            pharmacy = connection.execute("SELECT sessions.account_id FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND accounts.role = 'pharmacy'", (token_hash,)).fetchone()
-            if not pharmacy:
-                self.send_json(401, {"error": "جلسة الصيدلية غير صالحة."})
-                return
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -696,13 +554,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
-            connection.execute("INSERT INTO donation_pharmacy_responses(donation_id, pharmacy_account_id, status, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(donation_id) DO UPDATE SET pharmacy_account_id = excluded.pharmacy_account_id, status = excluded.status, updated_at = excluded.updated_at", (donation_id, pharmacy["account_id"], status, now))
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
-                "FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
-        self.send_json(200, {"request": self.donation_public(row, include_national_id=True)})
+        self.send_json(200, {"request": self.donation_public(row)})
 
     def redirect_to_auth(self, error: str) -> None:
         self.send_response(302)
@@ -790,7 +646,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             sheets = workbook["sheets"]
             inventory = sheets.get("الاصناف والكميات", [])
             supply = sheets.get("طلبات التوريد", [])
-            pharmacies = sheets.get("بيانات الصيداليات", [])
+            pharmacies = list(sheets.get("بيانات الصيداليات", []))
+            with closing(connect_database()) as directory_connection:
+                approved = directory_connection.execute("SELECT pharmacy_name, address, district, whatsapp, latitude, longitude FROM pharmacy_applications WHERE status = 'approved'").fetchall()
+            existing = {(str(row.get("اسم الصيدلية")), str(row.get("المنطقة / العنوان المتوقع")), str(row.get("رقم التليفون / الخط الساخن"))) for row in pharmacies}
+            for row in approved:
+                candidate = {"م": f"approved-{row['pharmacy_name']}", "اسم الصيدلية": row["pharmacy_name"], "المنطقة / العنوان المتوقع": f"{row['district']} - {row['address']}", "رقم التليفون / الخط الساخن": row["whatsapp"], "latitude": row["latitude"], "longitude": row["longitude"]}
+                key = (str(candidate["اسم الصيدلية"]), str(candidate["المنطقة / العنوان المتوقع"]), str(candidate["رقم التليفون / الخط الساخن"]))
+                if key not in existing: pharmacies.append(candidate); existing.add(key)
             supply_by_number = {str(record.get("م")): record for record in supply}
             catalog = [
                 {**item, **supply_by_number.get(str(item.get("م")), {})}
@@ -845,7 +708,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if not area:
             self.send_json(404, {"error": "ما قدرناش نحدد اسم المنطقة من موقعك."})
             return
-        self.send_json(200, {"area": str(area), "attribution": "OpenStreetMap contributors"})
+        self.send_json(200, {"area": str(area), "address": str(place.get("display_name") or area), "attribution": "OpenStreetMap contributors"})
 
     def handle_whatsapp_verification(self) -> None:
         parameters = parse_qs(urlsplit(self.path).query)
@@ -916,9 +779,18 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 raise ValueError("كمّل بيانات الصيدلية والصيدلي المسؤول والعنوان ومواعيد العمل.")
             if len(license_number) > 64 or len(pharmacy_name) > 120 or len(address) > 240:
                 raise ValueError("راجع طول بيانات الصيدلية.")
+            latitude_raw = str(payload.get("latitude", "")).strip()
+            longitude_raw = str(payload.get("longitude", "")).strip()
+            try:
+                latitude = float(latitude_raw) if latitude_raw else None
+                longitude = float(longitude_raw) if longitude_raw else None
+                if latitude is not None and not -90 <= latitude <= 90: raise ValueError
+                if longitude is not None and not -180 <= longitude <= 180: raise ValueError
+            except (TypeError, ValueError):
+                raise ValueError("إحداثيات GPS غير صالحة.")
             connection.execute(
-                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp),
+                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude),
             )
         notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
         self.send_json(202, {"status": "pending", "message": "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة."})

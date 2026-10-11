@@ -3,7 +3,6 @@ const form = document.querySelector("#account-form");
 const message = document.querySelector("#form-message");
 const submitButton = document.querySelector("#submit-button");
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const EGYPT_GOVERNORATES = ["القاهرة","الجيزة","الإسكندرية","القليوبية","الدقهلية","البحر الأحمر","البحيرة","الفيوم","الغربية","الإسماعيلية","المنوفية","المنيا","القليوبية","الوادي الجديد","السويس","أسوان","أسيوط","بني سويف","بورسعيد","دمياط","جنوب سيناء","كفر الشيخ","مطروح","الأقصر","قنا","شمال سيناء","سوهاج"].filter((value, index, list) => list.indexOf(value) === index);
 
 function setMessage(text, kind = "error") {
   message.textContent = text;
@@ -83,7 +82,7 @@ function fillLocationSuggestions(pharmacies) {
   const districts = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/).at(-1).trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
   const governorates = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/)[0].replace(/^محافظة\s*/, "").trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
   document.querySelector("#district-options").innerHTML = districts.map((district) => `<option value="${escapeHtml(district)}"></option>`).join("");
-  document.querySelector("#governorate-options").innerHTML = [...new Set([...EGYPT_GOVERNORATES, ...governorates])].sort((a, b) => a.localeCompare(b, "ar")).map((governorate) => `<option value="${escapeHtml(governorate)}"></option>`).join("");
+  document.querySelector("#governorate-options").innerHTML = governorates.map((governorate) => `<option value="${escapeHtml(governorate)}"></option>`).join("");
 }
 
 function escapeHtml(value) {
@@ -102,12 +101,23 @@ async function requestApi(path, payload) {
   return result;
 }
 
+function redirectByAccountRole(user) {
+  // الحسابان منفصلان: الصيدلية لا تدخل واجهة المريض، والمريض لا يدخل لوحة الصيدلية.
+  if (user?.role === "pharmacy") {
+    window.location.replace("pharmacy.html");
+    return;
+  }
+  window.location.replace("index.html?welcome=1#top");
+}
+
 function showAccount(user) {
   form.hidden = true;
   document.querySelector(".role-picker").hidden = true;
   document.querySelector(".auth-mode").hidden = true;
   const panel = document.querySelector("#signed-in-panel");
   const isPharmacy = user.role === "pharmacy";
+  redirectByAccountRole(user);
+  return;
   panel.innerHTML = `<h2>أهلاً ${escapeHtml(user.name)}</h2><p>${isPharmacy ? `حساب ${escapeHtml(user.pharmacyName || "الصيدلية")} في انتظار موافقة إدارة دوائي.` : "تم تسجيل دخولك. تقدر ترجع للبحث وتكمل من حيث وصلت."}</p><span class="${isPharmacy ? "pending-mark" : "pending-mark"}">${isPharmacy ? "قيد المراجعة" : "حساب مريض"}</span><div class="signed-in-actions"><a href="index.html${isPharmacy ? "#for-everyone" : "#my-medicines"}">العودة إلى دوائي</a><button type="button" id="logout-button">تسجيل الخروج</button></div>`;
   panel.hidden = false;
   document.querySelector("#auth-title").textContent = isPharmacy ? "طلب الصيدلية" : "تم تسجيل الدخول";
@@ -180,8 +190,6 @@ form.addEventListener("submit", async (event) => {
         address: String(formData.get("address") ?? "").trim(),
         openingHours: String(formData.get("openingHours") ?? "").trim(),
         whatsapp: String(formData.get("whatsapp") ?? "").trim(),
-        latitude: String(formData.get("latitude") ?? "").trim(),
-        longitude: String(formData.get("longitude") ?? "").trim(),
       });
     }
   }
@@ -195,9 +203,10 @@ form.addEventListener("submit", async (event) => {
     } else {
       const response = await requestApi(state.mode === "register" ? "register" : "login", state.mode === "register" ? { ...payload, privacyAccepted: payload.privacyAccepted } : { role: state.role, contact: payload.contact, password: payload.password });
       if (response.user) {
-        const requestedNext = new URLSearchParams(window.location.search).get("next");
-        const next = requestedNext === "/index.html" || requestedNext === "index.html" ? "index.html" : "index.html";
-        window.location.assign(`${next}?welcome=1#top`);
+        showAccount(response.user);
+        if (response.user.role !== "pharmacy" || response.user.status !== "approved") {
+          setMessage(state.mode === "register" ? "تم إنشاء حساب المريض وتسجيل الدخول بنجاح." : "تم تسجيل الدخول بنجاح.", "success");
+        }
       }
     }
   } catch (error) {
@@ -240,26 +249,6 @@ document.addEventListener("click", async (event) => {
     setMessage(error.message || "تعذر تسجيل الخروج.");
   }
 });
-
-async function fillPharmacyAddressFromGps() {
-  if (!navigator.geolocation) { setMessage("المتصفح مش بيدعم تحديد الموقع."); return; }
-  setMessage("بنحدد عنوان الصيدلية من GPS...", "success");
-  navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-    try {
-      const query = new URLSearchParams({ lat: String(coords.latitude), lon: String(coords.longitude) });
-      const response = await fetch(`/api/area?${query}`);
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.area) throw new Error(result.error || "تعذر تحديد العنوان.");
-      form.elements.address.value = result.address || result.area;
-      form.elements.pharmacyDistrict.value = result.area;
-      form.elements.latitude.value = String(coords.latitude);
-      form.elements.longitude.value = String(coords.longitude);
-      setMessage("تم ملء العنوان والمنطقة من GPS. راجعيهما قبل الإرسال.", "success");
-    } catch (error) { setMessage(error.message || "اكتبي العنوان يدويًا."); }
-  }, () => setMessage("الموقع غير متاح؛ اسمحي للموقع من إعدادات المتصفح."), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
-}
-
-document.querySelector("#pharmacy-use-location")?.addEventListener("click", fillPharmacyAddressFromGps);
 
 async function initializeAuth() {
   const savedTheme = localStorage.getItem("dawaey-theme");

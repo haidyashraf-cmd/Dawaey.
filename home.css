@@ -492,3 +492,23 @@ body { background: var(--paper); }
 
 
 .required-field-note { color: var(--red, #ad493f); font-size: 8px; font-weight: 800; }
+
+
+/* Donation section refresh */
+.donation-section { position: relative; overflow: hidden; background: linear-gradient(135deg, #f1fffb 0%, #f8fbff 52%, #fff9ef 100%); }
+.donation-section::before, .donation-section::after { position: absolute; border-radius: 50%; content: ""; pointer-events: none; }
+.donation-section::before { width: 230px; height: 230px; top: -100px; inset-inline-end: -60px; background: rgba(31, 157, 137, .10); }
+.donation-section::after { width: 170px; height: 170px; bottom: -80px; inset-inline-start: -45px; background: rgba(255, 190, 88, .12); }
+.donation-copy, .donation-card { position: relative; z-index: 1; }
+.donation-eyebrow { color: var(--teal-deep); }
+.donation-copy h2 { max-width: 520px; }
+.donation-impact { display: flex; align-items: center; gap: 10px; max-width: 420px; margin-top: 22px; padding: 12px 14px; border: 1px solid rgba(0, 127, 120, .15); border-radius: 13px; background: rgba(255,255,255,.65); }
+.donation-impact-icon, .donation-card-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 11px; background: var(--teal-deep); color: #fff; font-size: 18px; font-weight: 800; }
+.donation-impact div, .donation-card-head div { display: grid; gap: 2px; }
+.donation-impact strong, .donation-card-head strong { color: var(--ink); font-size: 11px; }
+.donation-impact small, .donation-card-head small { color: var(--muted); font-size: 9px; line-height: 1.6; }
+.donation-card { border-color: rgba(0,127,120,.18); border-radius: 19px; box-shadow: 0 22px 48px rgba(17, 93, 81, .13); }
+.donation-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+.donation-card-head .donation-card-icon { background: #f3a83b; }
+.donation-nav-link { color: var(--teal-deep) !important; font-weight: 800 !important; }
+.main-nav a.donation-nav-link::after { background: var(--teal-deep) !important; }

@@ -36,6 +36,12 @@ const medicineAliases = new Map([["بنادول", "panadol"], ["بانادول",
 function normalizeSearch(value) { return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim(); }
 const content = document.querySelector("#page-content");
 
+function pharmacyMapUrl(pharmacy) {
+  const name = String(pharmacy["اسم الصيدلية"] || "صيدلية");
+  const address = String(pharmacy["المنطقة / العنوان المتوقع"] || "مصر");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -290,7 +296,7 @@ function pharmacyCard(group) {
   const contacts = group.records.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dialNumber = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="pharmacy-contact"><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"] || "العنوان غير مدرج")}</small>${dialNumber ? `<a href="tel:${escapeHtml(dialNumber)}">${escapeHtml(phone)}</a>` : `<span>${escapeHtml(phone || "رقم غير مدرج")}</span>`}</div>`;
+    return `<div class="pharmacy-contact"><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"] || "العنوان غير مدرج")}</small><a class="pharmacy-map-link" href="${pharmacyMapUrl(pharmacy)}" target="_blank" rel="noopener">⌖ افتح الموقع على الخريطة</a>${dialNumber ? `<a href="tel:${escapeHtml(dialNumber)}">${escapeHtml(phone)}</a>` : `<span>${escapeHtml(phone || "رقم غير مدرج")}</span>`}</div>`;
   }).join("");
   return `<article class="pharmacy-card"><div class="pharmacy-card-top"><span class="pharmacy-monogram" aria-hidden="true">${escapeHtml(initials || "ص")}</span><h2>${escapeHtml(name)}</h2></div><div class="pharmacy-contact-list">${contacts}</div><div class="pharmacy-card-foot"><small>${formatNumber(group.records.length)} بيانات تواصل</small><small>من ملف المصدر</small></div></article>`;
 }

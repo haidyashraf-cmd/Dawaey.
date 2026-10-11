@@ -512,3 +512,8 @@ body { background: var(--paper); }
 .donation-card-head .donation-card-icon { background: #f3a83b; }
 .donation-nav-link { color: var(--teal-deep) !important; font-weight: 800 !important; }
 .main-nav a.donation-nav-link::after { background: var(--teal-deep) !important; }
+
+
+.header-donation-link { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 0 12px; border-radius: 9px; background: var(--teal-deep); color: #fff !important; font-size: 10px; font-weight: 800; text-decoration: none; box-shadow: 0 7px 16px rgba(0, 127, 120, .16); }
+.header-donation-link:hover { background: #075d4e; color: #fff !important; }
+@media (max-width: 680px) { .header-donation-link { min-height: 34px; padding-inline: 9px; font-size: 9px; } }

@@ -478,14 +478,10 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-<<<<<<< HEAD
             if route == "/api/pharmacy/import":
                 self.handle_pharmacy_import()
                 return
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/webhooks/whatsapp") else {}
-=======
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/webhooks/telegram", "/webhooks/whatsapp") else {}
->>>>>>> 1ec30f5 (Fix Telegram pharmacy approval callbacks)
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/webhooks/telegram", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":

@@ -224,14 +224,26 @@ function inventoryRows() {
   });
 }
 
+function unitDetails(record) {
+  const unit = String(record["وحدة القياس"] ?? record["الوحدة"] ?? "غير محددة").trim();
+  const quantity = numericValue(record["الكمية الحالية"] ?? record["الكمية"]);
+  const normalized = normalizeSearch(unit);
+  const strips = normalized.includes("شريط") || normalized.includes("tab") ? quantity : 0;
+  const boxes = normalized.includes("علب") || normalized.includes("box") ? quantity : 0;
+  return { unit, quantity, strips, boxes };
+}
+
 function inventoryTableRows(records) {
-  if (!records.length) return '<tr><td colspan="6"><div class="empty-state"><strong>مفيش أصناف مطابقة</strong>جرّب كلمة بحث أو فئة مختلفة.</div></td></tr>';
+  if (!records.length) return '<tr><td colspan="9"><div class="empty-state"><strong>مفيش أصناف مطابقة</strong>جرّب كلمة بحث أو فئة مختلفة.</div></td></tr>';
   return records.map((record) => `<tr>
     <td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td>
     <td>${escapeHtml(record["الكود"] || "—")}</td>
-    <td class="number-cell">${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])} <span class="table-secondary">${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span></td>
-    <td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td>
+    <td><span class="unit-badge">${escapeHtml(unitDetails(record).unit)}</span></td>
+    <td class="number-cell">${formatNumber(unitDetails(record).quantity)}</td>
+    <td class="number-cell">${unitDetails(record).strips ? formatNumber(unitDetails(record).strips) : "—"}</td>
+    <td class="number-cell">${unitDetails(record).boxes ? formatNumber(unitDetails(record).boxes) : "—"}</td>
     <td>${statusMarkup(getStockState(record))}</td>
+    <td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td>
     <td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td>
   </tr>`).join("");
 }
@@ -246,7 +258,7 @@ function updateInventoryResults() {
   if (!container) return;
 
   container.innerHTML = `
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>اسم الدواء</th><th>الكود</th><th>الكمية الحالية</th><th>حد الطلب</th><th>الحالة</th><th>توريد مقترح</th></tr></thead><tbody>${inventoryTableRows(visibleRecords)}</tbody></table></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>اسم الدواء</th><th>الكود</th><th>نوع الوحدة</th><th>الكمية الحالية</th><th>عدد الشرايط</th><th>عدد العلب</th><th>الحالة</th><th>حد الطلب</th><th>توريد مقترح</th></tr></thead><tbody>${inventoryTableRows(visibleRecords)}</tbody></table></div>
     <div class="pagination"><span class="pagination-label">${results.length ? `عرض ${formatNumber(start + 1)}–${formatNumber(Math.min(start + pageSize, results.length))} من ${formatNumber(results.length)}` : "لا توجد نتائج"}</span><div class="pagination-actions"><button class="page-button" data-page="prev" ${state.inventoryPage === 0 ? "disabled" : ""}>السابق</button><button class="page-button" disabled>${formatNumber(state.inventoryPage + 1)} / ${formatNumber(pageCount)}</button><button class="page-button" data-page="next" ${state.inventoryPage >= pageCount - 1 ? "disabled" : ""}>التالي</button></div></div>
   `;
   const count = document.querySelector("#inventory-count");
@@ -261,6 +273,7 @@ function renderInventory() {
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="inventory-search" type="search" value="${escapeHtml(state.inventoryQuery)}" placeholder="اسم الدواء، الكود، أو الفئة" autocomplete="off" aria-label="ابحث في الأدوية"></label><span class="toolbar-meta">الكمية حسب ملف الأصناف والتوريد</span></div>
     <div class="filter-row" aria-label="تصفية حسب الفئة والحالة">
       ${quickCategories.map((category) => `<button class="filter-chip ${state.inventoryCategory === category ? "is-active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
+      <button class="filter-chip stock-filter ${state.inventoryFilter === "الكل" ? "is-active" : ""}" data-stock-filter="الكل">كل الحالات</button><button class="filter-chip stock-filter danger-filter ${state.inventoryFilter === "out" ? "is-active" : ""}" data-stock-filter="out">خطر</button><button class="filter-chip stock-filter warning-filter ${state.inventoryFilter === "low" ? "is-active" : ""}" data-stock-filter="low">على وشك الخطر</button>
       <label class="sr-only" for="category-select">كل الفئات</label><select class="filter-select" id="category-select"><option value="الكل">كل الفئات</option>${allCategories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select>
       <span class="result-count" id="inventory-count"></span>
     </div>
@@ -435,7 +448,10 @@ function renderStockAlertPanel(records = getSupply()) {
   if (count) count.textContent = formatNumber(alerts.length);
   if (button) button.classList.toggle("has-alerts", alerts.length > 0);
   if (!panel) return;
-  panel.innerHTML = alerts.length ? `<div class="alert-panel-heading"><strong>تنبيهات المخزون</strong><button type="button" data-close-alerts>×</button></div>${alerts.map((record) => { const stateName = getStockState(record); return `<article class="stock-alert-item ${stateName === "out" ? "danger" : "warning"}"><span class="alert-item-icon">${stateName === "out" ? "×" : "!"}</span><div><strong>${escapeHtml(record["اسم الدواء"] || "صنف دوائي")}</strong><small>${stateName === "out" ? "خطر: الصنف غير متاح أو نفد" : "تنبيه: الصنف على وشك النفاد"} · الكمية الحالية: ${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])}</small></div><button type="button" data-view="inventory" data-close-alerts>عرض</button></article>`; }).join("")}<button class="notification-permission" type="button" id="enable-stock-notifications">تفعيل تنبيه المتصفح</button>` : `<div class="alert-panel-heading"><strong>تنبيهات المخزون</strong><button type="button" data-close-alerts>×</button></div><div class="stock-alert-empty"><span>✓</span><strong>كل المخزون في أمان</strong><small>لا توجد أصناف خطرة أو قريبة من النفاد حاليًا.</small></div>`;
+  const danger = alerts.filter((record) => getStockState(record) === "out");
+  const warning = alerts.filter((record) => getStockState(record) === "low");
+  const alertGroup = (title, records, kind) => records.length ? `<section class="alert-group ${kind}"><h3>${title}<span>${formatNumber(records.length)}</span></h3>${records.map((record) => `<article class="stock-alert-item ${kind}"><span class="alert-item-icon">${kind === "danger" ? "×" : "!"}</span><div><strong>${escapeHtml(record["اسم الدواء"] || "صنف دوائي")}</strong><small>${kind === "danger" ? "الصنف غير متاح أو نفد" : "الصنف على وشك النفاد"}</small></div><button type="button" data-view="inventory" data-close-alerts>عرض في المخزون</button></article>`).join("")}</section>` : "";
+  panel.innerHTML = alerts.length ? `<div class="alert-panel-heading"><strong>تنبيهات المخزون</strong><button type="button" data-close-alerts>×</button></div>${alertGroup("خطر", danger, "danger")}${alertGroup("على وشك الخطر", warning, "warning")}<button class="notification-permission" type="button" id="enable-stock-notifications">تفعيل تنبيه المتصفح</button>` : `<div class="alert-panel-heading"><strong>تنبيهات المخزون</strong><button type="button" data-close-alerts>×</button></div><div class="stock-alert-empty"><span>✓</span><strong>كل المخزون في أمان</strong><small>لا توجد أصناف خطرة أو قريبة من النفاد حاليًا.</small></div>`;
 }
 async function refreshStockAlerts() {
   if (!state.data) return;
@@ -553,6 +569,15 @@ document.addEventListener("click", (event) => {
     state.inventoryCategory = categoryButton.dataset.category;
     state.inventoryPage = 0;
     document.querySelectorAll("[data-category]").forEach((button) => button.classList.toggle("is-active", button === categoryButton));
+    updateInventoryResults();
+    return;
+  }
+
+  const stockFilter = event.target.closest("[data-stock-filter]");
+  if (stockFilter) {
+    state.inventoryFilter = stockFilter.dataset.stockFilter;
+    state.inventoryPage = 0;
+    document.querySelectorAll("[data-stock-filter]").forEach((button) => button.classList.toggle("is-active", button === stockFilter));
     updateInventoryResults();
     return;
   }

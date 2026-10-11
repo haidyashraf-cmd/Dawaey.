@@ -327,3 +327,6 @@ body { background: radial-gradient(circle at 12% 0%, rgba(0,191,166,.22), transp
 
 /* Clean supplied Dawaey logo. */
 .auth-brand img { width:86px; height:90px; object-fit:contain; }.auth-brand > span { display:none; }
+.location-input-row { display: flex; gap: 8px; align-items: stretch; }
+.location-input-row input { flex: 1; min-width: 0; }
+.gps-button { width: 44px; flex: 0 0 44px; border: 1px solid rgba(21,102,116,.25); border-radius: 12px; color: #156674; background: #fff; cursor: pointer; font-size: 21px; }

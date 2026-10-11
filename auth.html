@@ -10,9 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" href="static/img/dawaey-mark-clean.png" type="image/png">
-  <link rel="stylesheet" href="auth.css?v=google-1">
-  <link rel="stylesheet" href="static/css/tokens.css?v=google-1">
-  <script src="auth.js?v=auth-2" defer></script>
+  <link rel="stylesheet" href="auth.css?v=patient-gps-2">
+  <link rel="stylesheet" href="static/css/tokens.css?v=patient-gps-2">
+  <script src="auth.js" defer></script>
 </head>
 <body>
   <main class="auth-layout">
@@ -51,12 +51,12 @@
               <label class="field"><span>اسم الصيدلية</span><input name="pharmacyName" type="text" maxlength="120" autocomplete="organization" data-required></label>
               <label class="field"><span>اسم الصيدلي المسؤول</span><input name="pharmacistName" type="text" autocomplete="name" data-required></label>
               <label class="field"><span>رقم الترخيص أو السجل</span><input name="licenseNumber" type="text" maxlength="64" data-required></label>
-              <label class="field field-wide"><span>العنوان بالتفصيل</span><input name="address" type="text" maxlength="240" autocomplete="street-address" placeholder="الشارع، رقم العقار، علامة مميزة" data-required></label>
+              <label class="field field-wide"><span>العنوان بالتفصيل</span><div class="location-input-row"><input name="address" type="text" maxlength="240" autocomplete="street-address" placeholder="الشارع، رقم العقار، علامة مميزة" data-required><button class="gps-button" id="pharmacy-use-location" type="button" title="تحديد العنوان من GPS" aria-label="تحديد العنوان من GPS">⌖</button></div></label><input name="latitude" type="hidden"><input name="longitude" type="hidden">
               <label class="field"><span>المحافظة</span><input name="pharmacyGovernorate" type="text" list="governorate-options" autocomplete="address-level1" data-required></label>
               <label class="field"><span>المنطقة</span><input name="pharmacyDistrict" type="text" list="district-options" autocomplete="address-level2" data-required></label>
               <label class="field"><span>مواعيد العمل</span><input name="openingHours" type="text" placeholder="يوميًا من ٩ صباحًا لـ ١٢ مساءً" data-required></label>
               <label class="field"><span>رقم واتساب</span><input name="whatsapp" type="tel" inputmode="tel" placeholder="01xxxxxxxxx" data-required></label>
-              <p class="form-note field-wide">عنوان الفرع يتسجل للمراجعة؛ الإحداثيات ومشاركة الموقع مش متاحة في المصدر الحالي.</p>
+              <p class="form-note field-wide">استخدم أيقونة GPS لملء العنوان التقريبي، ثم راجع البيانات قبل الإرسال.</p>
             </div>
 
             <label class="field"><span>كلمة المرور</span><span class="password-wrap"><input name="password" type="password" autocomplete="current-password" minlength="8" required><button class="password-toggle" type="button" aria-label="إظهار كلمة المرور">إظهار</button></span></label>

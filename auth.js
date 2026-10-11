@@ -3,6 +3,7 @@ const form = document.querySelector("#account-form");
 const message = document.querySelector("#form-message");
 const submitButton = document.querySelector("#submit-button");
 const numberFormat = new Intl.NumberFormat("ar-EG");
+const EGYPT_GOVERNORATES = ["القاهرة","الجيزة","الإسكندرية","القليوبية","الدقهلية","البحر الأحمر","البحيرة","الفيوم","الغربية","الإسماعيلية","المنوفية","المنيا","القليوبية","الوادي الجديد","السويس","أسوان","أسيوط","بني سويف","بورسعيد","دمياط","جنوب سيناء","كفر الشيخ","مطروح","الأقصر","قنا","شمال سيناء","سوهاج"].filter((value, index, list) => list.indexOf(value) === index);
 
 function setMessage(text, kind = "error") {
   message.textContent = text;
@@ -58,7 +59,7 @@ function syncForm() {
     : "ادخل بيانات حسابك للمتابعة في دوائي.";
   document.querySelector("#mode-footnote").textContent = registering
     ? "بيانات التسجيل تُحفظ في قاعدة دوائي المحلية، وكلمة المرور لا تُحفظ كنص مباشر."
-    : "تقدر تدخل وتكمل استخدام دوائي من نفس الحساب.";
+    : "الدخول آمن بكلمة مرور مشفّرة على الخادم المحلي.";
   clearFieldErrors();
 }
 
@@ -82,7 +83,7 @@ function fillLocationSuggestions(pharmacies) {
   const districts = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/).at(-1).trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
   const governorates = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/)[0].replace(/^محافظة\s*/, "").trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
   document.querySelector("#district-options").innerHTML = districts.map((district) => `<option value="${escapeHtml(district)}"></option>`).join("");
-  document.querySelector("#governorate-options").innerHTML = governorates.map((governorate) => `<option value="${escapeHtml(governorate)}"></option>`).join("");
+  document.querySelector("#governorate-options").innerHTML = [...new Set([...EGYPT_GOVERNORATES, ...governorates])].sort((a, b) => a.localeCompare(b, "ar")).map((governorate) => `<option value="${escapeHtml(governorate)}"></option>`).join("");
 }
 
 function escapeHtml(value) {
@@ -179,6 +180,8 @@ form.addEventListener("submit", async (event) => {
         address: String(formData.get("address") ?? "").trim(),
         openingHours: String(formData.get("openingHours") ?? "").trim(),
         whatsapp: String(formData.get("whatsapp") ?? "").trim(),
+        latitude: String(formData.get("latitude") ?? "").trim(),
+        longitude: String(formData.get("longitude") ?? "").trim(),
       });
     }
   }
@@ -192,7 +195,7 @@ form.addEventListener("submit", async (event) => {
     } else {
       const response = await requestApi(state.mode === "register" ? "register" : "login", state.mode === "register" ? { ...payload, privacyAccepted: payload.privacyAccepted } : { role: state.role, contact: payload.contact, password: payload.password });
       if (response.user) {
-        window.location.assign(response.user.role === "pharmacy" ? "pharmacy.html" : "index.html?welcome=1#top");
+        window.location.assign("index.html?welcome=1#donate-medicine");
       }
     }
   } catch (error) {
@@ -235,6 +238,26 @@ document.addEventListener("click", async (event) => {
     setMessage(error.message || "تعذر تسجيل الخروج.");
   }
 });
+
+async function fillPharmacyAddressFromGps() {
+  if (!navigator.geolocation) { setMessage("المتصفح مش بيدعم تحديد الموقع."); return; }
+  setMessage("بنحدد عنوان الصيدلية من GPS...", "success");
+  navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+    try {
+      const query = new URLSearchParams({ lat: String(coords.latitude), lon: String(coords.longitude) });
+      const response = await fetch(`/api/area?${query}`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.area) throw new Error(result.error || "تعذر تحديد العنوان.");
+      form.elements.address.value = result.address || result.area;
+      form.elements.pharmacyDistrict.value = result.area;
+      form.elements.latitude.value = String(coords.latitude);
+      form.elements.longitude.value = String(coords.longitude);
+      setMessage("تم ملء العنوان والمنطقة من GPS. راجعيهما قبل الإرسال.", "success");
+    } catch (error) { setMessage(error.message || "اكتبي العنوان يدويًا."); }
+  }, () => setMessage("الموقع غير متاح؛ اسمحي للموقع من إعدادات المتصفح."), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
+document.querySelector("#pharmacy-use-location")?.addEventListener("click", fillPharmacyAddressFromGps);
 
 async function initializeAuth() {
   const savedTheme = localStorage.getItem("dawaey-theme");

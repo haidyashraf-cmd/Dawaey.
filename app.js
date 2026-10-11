@@ -31,7 +31,7 @@ const state = {
 
 const numberFormat = new Intl.NumberFormat("ar-EG");
 const dateFormat = new Intl.DateTimeFormat("ar-EG", { weekday: "long", day: "numeric", month: "long" });
-const pageSize = 10;
+const pageSize = 25;
 const medicineAliases = new Map([["بنادول", "panadol"], ["بانادول", "panadol"], ["كتافلام", "cataflam"], ["كاتافلام", "cataflam"], ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["أدول", "adol"], ["ادول", "adol"], ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"], ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نيروفين", "nurofen"]]);
 function normalizeSearch(value) { return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim(); }
 const content = document.querySelector("#page-content");
@@ -92,6 +92,11 @@ function getPharmacyGroups() {
 
 function getSupplyByNumber() {
   return new Map(getSupply().map((record) => [String(record["م"]), record]));
+}
+
+function medicineUnit(record) {
+  const value = String(record["وحدة القياس"] ?? record["الوحدة"] ?? "").trim();
+  return /^\d+$/.test(value) || !value ? "الوحدة غير محددة" : value;
 }
 
 function getStockState(record) {
@@ -186,7 +191,7 @@ function renderOverview() {
       </article>
       <article class="panel">
         <div class="panel-heading"><div><h2>مقترحات التوريد</h2><p>أعلى الكميات المقترحة في الملف</p></div><span class="panel-kicker">${formatNumber(supply.length)} صنف</span></div>
-        <div class="supply-list">${suggested.map((record) => `<div class="supply-row"><div><strong>${escapeHtml(record["اسم الدواء"])}</strong><small>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</small></div><span class="supply-quantity">${formatNumber(record["كمية التوريد المقترحة"])} <small>${escapeHtml(record["وحدة القياس"] || "وحدة")}</small></span></div>`).join("")}</div>
+        <div class="supply-list">${suggested.map((record) => `<div class="supply-row"><div><strong>${escapeHtml(record["اسم الدواء"])}</strong><small>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</small></div><span class="supply-quantity">${formatNumber(record["كمية التوريد المقترحة"])} <small>${escapeHtml(medicineUnit(record))}</small></span></div>`).join("")}</div>
         <p class="panel-note"><span aria-hidden="true">i</span><span>الكميات المقترحة من ورقة التوريد، وليست طلبات شراء مؤكدة.</span></p>
       </article>
     </section>
@@ -232,7 +237,7 @@ function inventoryTableRows(records) {
   return records.map((record) => `<tr>
     <td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td>
     <td>${escapeHtml(record["الكود"] || "—")}</td>
-    <td class="number-cell">${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])} <span class="table-secondary">${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span></td>
+    <td class="number-cell">${formatNumber(record["الكمية الحالية"] ?? record["الكمية"])} <span class="table-secondary">${escapeHtml(medicineUnit(record))}</span></td>
     <td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td>
     <td>${statusMarkup(getStockState(record))}</td>
     <td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td>
@@ -398,7 +403,7 @@ function renderConsumptionReports() {
 
 function renderDonations() {
   const requests = getDonationRequests();
-  const cards = requests.length ? requests.map((request) => `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div><div class="donation-request-actions">${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
+  const cards = requests.length ? requests.map((request) => `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>National Id: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div><div class="donation-request-actions">${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
   content.innerHTML = `${pageHeading("طلبات التبرع بالأدوية", "راجع طلبات المرضى وحدد ما يمكن للصيدلية استقباله.", "خدمة المجتمع")}<div class="donation-dashboard-note"><strong>تنبيه مهم:</strong><span>تأكد من صلاحية الدواء وسلامة العبوة قبل القبول، وتواصل مع المتبرع خارج الموقع لتنسيق التسليم.</span></div><section class="donation-request-grid" id="donation-request-results">${cards}</section>`;
 }
 

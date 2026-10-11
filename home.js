@@ -104,7 +104,12 @@ function findMatches(query) {
     else if (`${name} ${category}`.includes(aliasedQuery)) score = 60;
     else if (aliasedQuery.length >= 4 && editDistance(name.split(" ")[0], aliasedQuery) <= (aliasedQuery.length > 7 ? 2 : 1)) score = 30;
     return { ...record, score };
-  }).filter((record) => record.score > 0).sort((left, right) => right.score - left.score || String(left["اسم الدواء"]).localeCompare(String(right["اسم الدواء"]))).slice(0, 30);
+  }).filter((record) => record.score > 0).sort((left, right) => right.score - left.score || String(left["اسم الدواء"]).localeCompare(String(right["اسم الدواء"]))).slice(0, 100);
+}
+
+function medicineUnit(record) {
+  const value = String(record["وحدة القياس"] ?? record["الوحدة"] ?? "").trim();
+  return /^\d+$/.test(value) || !value ? "الوحدة غير محددة" : value;
 }
 
 function getStatus(record) {
@@ -137,7 +142,7 @@ function renderMedicineCard(record) {
   return `<article class="medicine-result">
     <span class="medicine-glyph" aria-hidden="true"><i></i><b>Rx</b></span>
     <div class="medicine-main"><div class="medicine-title-row"><div><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
-      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
+      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} <b class="medicine-unit-badge">${escapeHtml(medicineUnit(record))}</b></span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
       <button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button>
     </div>
     ${nearby}
@@ -325,8 +330,8 @@ function performSearch(query) {
 
 function renderMedicineResults() {
   const isPatient = state.user?.role === "patient";
-  const visibleMatches = isPatient ? state.matches : state.matches.slice(0, 5);
-  const guestNotice = !isPatient && state.matches.length > 5 ? '<div class="guest-limit-note">دي معاينة محدودة. <a href="auth.html">سجّل كمريض لعرض نتائج أكتر.</a></div>' : "";
+  const visibleMatches = isPatient ? state.matches : state.matches.slice(0, 20);
+  const guestNotice = !isPatient && state.matches.length > 20 ? '<div class="guest-limit-note">عرضنا أول ٢٠ نتيجة. <a href="auth.html">سجّل كمريض لعرض كل النتائج.</a></div>' : "";
   document.querySelector("#medicine-results").innerHTML = state.matches.length
     ? `${visibleMatches.map(renderMedicineCard).join("")}${guestNotice}`
     : `<div class="empty-results"><strong>مش لاقيين الدواء ده في ملف المصدر.</strong><br>جرّب اسمًا أو كودًا مختلفًا.</div>`;
@@ -542,7 +547,14 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
-    const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
+    const quantityValue = document.querySelector("#donation-quantity").value.trim();
+    const unit = document.querySelector("#donation-unit").value;
+    const nationalId = document.querySelector("#donation-national-id").value.replace(/[^0-9٠-٩]/g, "").trim();
+    const quantity = quantityValue || "غير محددة";
+    if (!/^[0-9٠-٩]{14}$/.test(nationalId)) {
+      showToast("اكتب National Id مكوّنًا من 14 رقمًا.");
+      return;
+    }
     if (state.user?.role !== "patient") {
       document.querySelector("#donation-results").innerHTML = '<p class="donation-saved-note">سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار عند قبول الصيدلية للتبرع. <a href="auth.html">تسجيل الدخول</a></p>';
       return;
@@ -553,7 +565,7 @@ function setupDonationAndAssistant() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine, area, quantity }),
+        body: JSON.stringify({ medicine, area, quantity, unit, nationalId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");

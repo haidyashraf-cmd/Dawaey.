@@ -409,3 +409,6 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 .import-status.is-success { color: var(--teal-deep) !important; }
 .import-status.is-error { color: #c93642 !important; }
 @media (max-width: 780px) { .import-panel { grid-template-columns: 1fr; }.import-form { flex-wrap: wrap; }.import-hint { grid-column: auto; } }
+
+
+.donation-request-meta span { display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }

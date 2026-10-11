@@ -376,8 +376,23 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
+    def has_active_session(self) -> bool:
+        token = self.get_session_token()
+        if not token:
+            return False
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+        with closing(connect_database()) as connection:
+            row = connection.execute("SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?", (token_hash, int(time.time()))).fetchone()
+        return bool(row)
+
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
+        if route in {"/", "/index.html"} and not self.has_active_session():
+            self.send_response(302)
+            self.send_header("Location", "/auth.html?next=/index.html")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
         if route == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")

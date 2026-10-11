@@ -192,7 +192,7 @@ form.addEventListener("submit", async (event) => {
     } else {
       const response = await requestApi(state.mode === "register" ? "register" : "login", state.mode === "register" ? { ...payload, privacyAccepted: payload.privacyAccepted } : { role: state.role, contact: payload.contact, password: payload.password });
       if (response.user) {
-        window.location.assign("index.html?welcome=1#donate-medicine");
+        window.location.assign(response.user.role === "pharmacy" ? "pharmacy.html" : "index.html?welcome=1#top");
       }
     }
   } catch (error) {

@@ -61,6 +61,22 @@ function pharmacyMapUrl(pharmacy) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
 }
 
+async function loadPatientNotifications() {
+  const empty = document.querySelector("#notification-empty");
+  if (state.user?.role !== "patient") { if (empty) empty.textContent = "سجّل دخولك كمريض لمتابعة إشعارات التبرعات."; return; }
+  try {
+    const response = await fetch("/api/notifications", { credentials: "same-origin" });
+    const payload = await response.json();
+    const items = payload.notifications || [];
+    if (!items.length) { empty.textContent = "لا توجد إشعارات جديدة حاليًا."; return; }
+    empty.innerHTML = items.map((item) => {
+      const map = item.mapUrl ? `<a href="${escapeHtml(item.mapUrl)}" target="_blank" rel="noopener">فتح GPS</a>` : "";
+      const phone = item.pharmacyPhone ? `<a href="tel:${escapeHtml(item.pharmacyPhone)}">${escapeHtml(item.pharmacyPhone)}</a>` : "رقم غير مسجل";
+      return `<article class="patient-notification"><strong>${escapeHtml(item.status === "accepted" ? "تم قبول تبرعك" : "تحديث طلب التبرع")}</strong><p>${escapeHtml(item.medicine)} — ${escapeHtml(item.pharmacyName || "الصيدلية")}</p><small>العنوان: ${escapeHtml(item.pharmacyAddress || item.pharmacyArea || "غير مسجل")}</small><span>التواصل: ${phone} ${map}</span></article>`;
+    }).join("");
+  } catch { empty.textContent = "تعذر تحميل الإشعارات الآن؛ جرّب فتح الجرس مرة أخرى."; }
+}
+
 function openNearbyPharmacyMap() {
   if (!navigator.geolocation) { window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank", "noopener"); return; }
   showToast("بنحدد موقعك لعرض الصيدليات القريبة على الخريطة...");
@@ -594,7 +610,7 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) document.querySelector("#notification-empty").textContent = "لا توجد إشعارات جديدة حاليًا. ستظهر هنا نتيجة قبول أو رفض التبرع.";
+    if (!panel.hidden) { document.querySelector("#notification-empty").textContent = "جاري تحميل الإشعارات..."; loadPatientNotifications(); }
   });
   document.querySelector("#close-notifications")?.addEventListener("click", () => { document.querySelector("#notifications-panel").hidden = true; });
   document.querySelector("#medicine-results")?.addEventListener("click", (event) => { if (event.target.closest("[data-open-nearby-map]")) openNearbyPharmacyMap(); });
@@ -678,6 +694,7 @@ async function start() {
     state.inventory = data.catalog ?? [];
     state.pharmacies = data.pharmacies ?? [];
     state.user = session.user ?? null;
+    if (state.user?.role === "pharmacy") { window.location.replace("pharmacy.html"); return; }
     updateStats();
     updateSavedList();
     renderAreaResults();

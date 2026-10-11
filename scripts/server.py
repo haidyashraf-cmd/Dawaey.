@@ -101,6 +101,12 @@ def initialize_database() -> None:
             );
             CREATE INDEX IF NOT EXISTS donation_status ON donation_requests(status);
             CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
+            CREATE TABLE IF NOT EXISTS donation_pharmacy_responses (
+                donation_id TEXT PRIMARY KEY REFERENCES donation_requests(id) ON DELETE CASCADE,
+                pharmacy_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             """
         )
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)")}
@@ -474,6 +480,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/donations":
             self.handle_donations()
             return
+        if route == "/api/notifications":
+            self.handle_notifications()
+            return
         if route == "/webhooks/whatsapp":
             self.handle_whatsapp_verification()
             return
@@ -586,6 +595,34 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             ).fetchall()
         self.send_json(200, {"requests": [self.donation_public(row, include_national_id=True) for row in rows]})
 
+    def handle_notifications(self) -> None:
+        token = self.get_session_token()
+        if not token:
+            self.send_json(401, {"error": "سجّل دخولك كمريض أولًا."})
+            return
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
+        with closing(connect_database()) as connection:
+            account = connection.execute("SELECT account_id FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE token_hash = ? AND expires_at > ? AND accounts.role = 'patient'", (token_hash, int(time.time()))).fetchone()
+            if not account:
+                self.send_json(403, {"error": "الإشعارات متاحة لحسابات المرضى فقط."})
+                return
+            rows = connection.execute("""
+                SELECT dr.id, dr.medicine, dr.area, dr.quantity, dr.unit, dr.updated_at,
+                       dpr.status, pa.pharmacy_name, pa.address, pa.district, a.contact
+                FROM donation_requests dr
+                JOIN donation_pharmacy_responses dpr ON dpr.donation_id = dr.id
+                JOIN pharmacy_applications pa ON pa.account_id = dpr.pharmacy_account_id
+                JOIN accounts a ON a.id = dpr.pharmacy_account_id
+                WHERE dr.account_id = ? AND dpr.status IN ('accepted','rejected','completed')
+                ORDER BY dpr.updated_at DESC LIMIT 50
+            """, (account["account_id"],)).fetchall()
+        notifications = []
+        for row in rows:
+            address = row["address"] or row["district"] or row["area"]
+            query = urllib.parse.quote(f"{row['pharmacy_name']} {address} مصر")
+            notifications.append({"id": row["id"], "medicine": row["medicine"], "quantity": row["quantity"], "unit": row["unit"], "status": row["status"], "pharmacyName": row["pharmacy_name"], "pharmacyAddress": address, "pharmacyArea": row["district"], "pharmacyPhone": row["contact"], "mapUrl": f"https://www.google.com/maps/search/?api=1&query={query}", "updatedAt": row["updated_at"]})
+        self.send_json(200, {"notifications": notifications})
+
     def handle_create_donation(self, payload: dict) -> None:
         area = str(payload.get("area", "")).strip()
         if not area or len(area) > 160:
@@ -645,7 +682,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if status not in {"pending", "accepted", "completed", "rejected"}:
             raise ValueError("حالة طلب التبرع غير صالحة.")
         now = int(time.time())
+        token = self.get_session_token()
+        token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest() if token else ""
         with closing(connect_database()) as connection, connection:
+            pharmacy = connection.execute("SELECT sessions.account_id FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND accounts.role = 'pharmacy'", (token_hash,)).fetchone()
+            if not pharmacy:
+                self.send_json(401, {"error": "جلسة الصيدلية غير صالحة."})
+                return
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -653,6 +696,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
+            connection.execute("INSERT INTO donation_pharmacy_responses(donation_id, pharmacy_account_id, status, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(donation_id) DO UPDATE SET pharmacy_account_id = excluded.pharmacy_account_id, status = excluded.status, updated_at = excluded.updated_at", (donation_id, pharmacy["account_id"], status, now))
             row = connection.execute(
                 "SELECT id, medicine, area, quantity, unit, status, created_at, updated_at, national_id_encrypted "
                 "FROM donation_requests WHERE id = ?",

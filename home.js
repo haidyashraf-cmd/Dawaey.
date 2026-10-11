@@ -440,32 +440,43 @@ function addAssistantMessage(text, kind) {
   const bubble = document.createElement("div"); bubble.className = `assistant-message ${kind}`; bubble.innerHTML = `<span>${text}</span>`; messages.appendChild(bubble); messages.scrollTop = messages.scrollHeight;
 }
 
+function renderDonationResultsForItems(items, area) {
+  const container = document.querySelector("#donation-results");
+  if (!container) return;
+  const entries = getNearbyPharmacies(area).slice(0, 12);
+  if (!items.length || !area) { container.innerHTML = "<p>أضف نوع دواء والمنطقة لعرض الصيدليات المسجلة.</p>"; return; }
+  const names = items.map((item) => `${escapeHtml(item.medicine)} (${formatNumber(item.quantity)} ${escapeHtml(item.unit)})`).join("، ");
+  if (!entries.length) { container.innerHTML = `<p>مش لاقيين صيدلية مسجلة في <strong>${escapeHtml(area)}</strong>.</p>`; return; }
+  container.innerHTML = `<div class="donation-result-title"><strong>فروع قريبة للتواصل بخصوص: ${names}</strong><small>${numberFormat.format(entries.length)} فرعًا مطابقًا للمنطقة</small></div>` + entries.map((pharmacy) => {
+    const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
+    const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
+    return `<div class="donation-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<em>${escapeHtml(phone || "رقم غير مدرج")}</em>`}</div>`;
+  }).join("");
+}
+
 function setupDonationAndAssistant() {
+  const donationItems = document.querySelector("#donation-items");
+  const addDonationItem = document.querySelector("#add-donation-item");
+  const itemTemplate = () => { const item = document.createElement("div"); item.className = "donation-item"; item.innerHTML = `<label>اسم الدواء أو الكود<input name="donation-medicine" type="search" placeholder="مثال: Panadol" required></label><label>الكمية<input name="donation-quantity" type="number" min="1" value="1" required></label><label>نوع الوحدة<select name="donation-unit"><option value="شريط">شريط</option><option value="علبة">علبة</option><option value="زجاجة">زجاجة / شراب</option><option value="أنبوبة">أنبوبة / مرهم</option><option value="كيس">كيس</option><option value="أمبول">أمبول</option><option value="فيال">فيال</option><option value="بخاخ">بخاخ</option><option value="قلم">قلم</option><option value="كبسولة">كبسولة</option><option value="وحدة">وحدة</option></select></label><button type="button" class="remove-donation-item" aria-label="حذف الصنف">×</button>`; return item; };
+  const refreshRemoveButtons = () => donationItems?.querySelectorAll(".remove-donation-item").forEach((button) => { button.hidden = donationItems.children.length === 1; });
+  addDonationItem?.addEventListener("click", () => { donationItems.appendChild(itemTemplate()); refreshRemoveButtons(); donationItems.lastElementChild.querySelector("input")?.focus(); });
+  donationItems?.addEventListener("click", (event) => { if (event.target.closest(".remove-donation-item")) { event.target.closest(".donation-item").remove(); refreshRemoveButtons(); } });
+  refreshRemoveButtons();
   document.querySelector("#donation-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
-    const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
-    renderDonationResults(medicine, area);
+    const items = [...document.querySelectorAll(".donation-item")].map((row) => ({ medicine: row.querySelector('[name="donation-medicine"]').value.trim(), quantity: row.querySelector('[name="donation-quantity"]').value.trim() || "1", unit: row.querySelector('[name="donation-unit"]').value })).filter((item) => item.medicine);
+    renderDonationResultsForItems(items, area);
     try {
-      const response = await fetch("/api/donations", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine, area, quantity }),
-      });
+      const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, area }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
-      const notice = document.querySelector("#donation-results");
-      notice.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل طلب التبرع على الخادم وسيظهر للصيدليات من أي جهاز.</p>');
-    } catch (error) {
-      showToast(error.message || "تعذر تسجيل طلب التبرع.");
-    }
+      document.querySelector("#donation-results")?.insertAdjacentHTML("afterbegin", '<p class="donation-saved-note">تم تسجيل كل أصناف التبرع بالكمية والوحدة على الخادم.</p>');
+    } catch (error) { showToast(error.message || "تعذر تسجيل طلب التبرع."); }
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));
 }
-
 function setupEvents() {
   document.querySelector("#medicine-search-form").addEventListener("submit", (event) => { event.preventDefault(); performSearch(searchInput.value); });
   document.querySelector("#web-search-arabic")?.addEventListener("click", () => {

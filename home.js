@@ -552,9 +552,12 @@ function setupDonationAndAssistant() {
     const nationalId = document.querySelector("#donation-national-id").value.replace(/[^0-9٠-٩]/g, "").trim();
     const quantity = quantityValue || "غير محددة";
     if (!/^[0-9٠-٩]{14}$/.test(nationalId)) {
-      showToast("اكتب National Id مكوّنًا من 14 رقمًا.");
+      document.querySelector("#donation-national-id").setCustomValidity("National Id مطلوب ويجب أن يتكون من 14 رقمًا.");
+      document.querySelector("#donation-national-id").reportValidity();
+      showToast("National Id إجباري ومكوّن من 14 رقمًا.");
       return;
     }
+    document.querySelector("#donation-national-id").setCustomValidity("");
     if (state.user?.role !== "patient") {
       document.querySelector("#donation-results").innerHTML = '<p class="donation-saved-note">سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار عند قبول الصيدلية للتبرع. <a href="auth.html">تسجيل الدخول</a></p>';
       return;

@@ -36,12 +36,6 @@ const medicineAliases = new Map([["بنادول", "panadol"], ["بانادول",
 function normalizeSearch(value) { return String(value ?? "").toLocaleLowerCase("ar-EG").normalize("NFD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim(); }
 const content = document.querySelector("#page-content");
 
-function pharmacyMapUrl(pharmacy) {
-  const name = String(pharmacy["اسم الصيدلية"] || "صيدلية");
-  const address = String(pharmacy["المنطقة / العنوان المتوقع"] || "مصر");
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
-}
-
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -235,7 +229,7 @@ function unitDetails(record) {
   const quantity = numericValue(record["الكمية الحالية"] ?? record["الكمية"]);
   const normalized = normalizeSearch(unit);
   const strips = normalized.includes("شريط") || normalized.includes("tab") ? quantity : 0;
-  const boxes = normalized.includes("علب") || normalized.includes("box") ? quantity : 0;
+  const boxes = normalized.includes("علب") || normalized.includes("علبه") || normalized.includes("box") ? quantity : 0;
   return { unit, quantity, strips, boxes };
 }
 
@@ -296,7 +290,7 @@ function pharmacyCard(group) {
   const contacts = group.records.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dialNumber = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="pharmacy-contact"><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"] || "العنوان غير مدرج")}</small><a class="pharmacy-map-link" href="${pharmacyMapUrl(pharmacy)}" target="_blank" rel="noopener">⌖ افتح الموقع على الخريطة</a>${dialNumber ? `<a href="tel:${escapeHtml(dialNumber)}">${escapeHtml(phone)}</a>` : `<span>${escapeHtml(phone || "رقم غير مدرج")}</span>`}</div>`;
+    return `<div class="pharmacy-contact"><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"] || "العنوان غير مدرج")}</small>${dialNumber ? `<a href="tel:${escapeHtml(dialNumber)}">${escapeHtml(phone)}</a>` : `<span>${escapeHtml(phone || "رقم غير مدرج")}</span>`}</div>`;
   }).join("");
   return `<article class="pharmacy-card"><div class="pharmacy-card-top"><span class="pharmacy-monogram" aria-hidden="true">${escapeHtml(initials || "ص")}</span><h2>${escapeHtml(name)}</h2></div><div class="pharmacy-contact-list">${contacts}</div><div class="pharmacy-card-foot"><small>${formatNumber(group.records.length)} بيانات تواصل</small><small>من ملف المصدر</small></div></article>`;
 }
@@ -356,8 +350,10 @@ async function loadDonations() {
 }
 function getConsumptionValue(record) {
   const actual = ["الاستهلاك الشهري", "الاستهلاك", "كمية الاستهلاك"].map((key) => numericValue(record[key])).find((value) => value > 0);
-  if (actual) return { value: actual, estimated: false };
-  return { value: numericValue(record["كمية التوريد المقترحة"]), estimated: true };
+  const normalized = normalizeSearch(record["وحدة القياس"] ?? record["الوحدة"] ?? "");
+  const unit = normalized.includes("علب") || normalized.includes("علبه") || normalized.includes("box") ? "علبة" : normalized.includes("شريط") || normalized.includes("tab") ? "شريط" : "شريط/علبة";
+  if (actual) return { value: actual, unit, estimated: false };
+  return { value: numericValue(record["كمية التوريد المقترحة"]), unit, estimated: true };
 }
 function renderConsumptionReports() {
   const rows = getSupply().map((record) => ({ record, ...getConsumptionValue(record) })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value);
@@ -365,7 +361,7 @@ function renderConsumptionReports() {
   const estimated = rows.filter((row) => row.estimated).length;
   const top = rows[0];
   const month = new Intl.DateTimeFormat("ar-EG", { month: "long", year: "numeric" }).format(new Date());
-  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف."}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي الوحدات</span><strong>${formatNumber(total)}</strong><small>مؤشر الشهر الحالي</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} وحدة${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الوحدات</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="5"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
+  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف."}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي الشرايط والعلب</span><strong>${formatNumber(total)}</strong><small>بحسب نوع الوحدة المسجل</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} ${top.unit}${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الكمية</th><th>نوع الوحدة</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td>${escapeHtml(row.unit)}</td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="6"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function renderDonations() {

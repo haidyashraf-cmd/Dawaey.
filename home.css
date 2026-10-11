@@ -463,30 +463,29 @@ body { background: var(--paper); }
 .main-nav a.pharmacy-link::after { background: transparent !important; opacity: 0 !important; transform: scaleX(.35) !important; }
 .main-nav a.pharmacy-link:hover { color: var(--teal-deep) !important; }
 
-/* Multi-item donation form */
-.donation-items { display: grid; gap: 12px; }
-.donation-item { position: relative; display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(90px, .65fr) minmax(140px, 1fr) auto; gap: 10px; align-items: end; padding: 14px; border: 1px solid rgba(21, 102, 116, .16); border-radius: 16px; background: rgba(255,255,255,.62); }
-.donation-item label { min-width: 0; }
-.donation-item select, .donation-item input { width: 100%; }
-.remove-donation-item { width: 34px; height: 34px; border: 1px solid rgba(180, 55, 74, .25); border-radius: 50%; color: #b4374a; background: #fff; cursor: pointer; font-size: 20px; line-height: 1; }
-.secondary-button { margin: 12px 0 4px; border: 1px solid rgba(21, 102, 116, .28); border-radius: 999px; padding: 10px 16px; color: #156674; background: transparent; cursor: pointer; font: inherit; font-weight: 700; }
-.donation-hint { margin: 0; color: #557078; font-size: .88rem; }
-@media (max-width: 700px) { .donation-item { grid-template-columns: 1fr 1fr; } .donation-item label:first-child { grid-column: 1 / -1; } .remove-donation-item { position: absolute; inset-inline-start: 8px; top: 8px; } }
-.location-input-row { display: flex; gap: 8px; align-items: stretch; }
-.location-input-row input { flex: 1; min-width: 0; }
-.gps-button { width: 44px; flex: 0 0 44px; border: 1px solid rgba(21,102,116,.25); border-radius: 12px; color: #156674; background: #fff; cursor: pointer; font-size: 21px; }
-.gps-button:hover { background: #eaf7f5; }
-.account-logout { border: 1px solid rgba(180,55,74,.25); border-radius: 999px; padding: 8px 12px; color: #a6384a; background: #fff; cursor: pointer; font: inherit; font-size: .85rem; }
 
-.notification-button { position: relative; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--navy); cursor: pointer; font-size: 22px; }
-.notification-button:hover { border-color: var(--teal-deep); color: var(--teal-deep); }
-.notification-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; vertical-align: middle; }
-.notification-badge { position: absolute; top: -5px; left: -5px; min-width: 17px; padding: 2px 4px; border-radius: 99px; background: var(--danger); color: #fff; font-size: 9px; }
-.notification-menu, .account-menu { position: absolute; z-index: 20; top: calc(100% + 9px); right: 0; min-width: 190px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 14px 30px rgba(16,42,67,.16); }
-.notification-menu { right: 55px; }
-.notification-menu p { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
-.account-menu { right: 0; }
-.account-menu a, .account-menu button { display: block; width: 100%; padding: 9px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--navy); text-align: right; text-decoration: none; font: inherit; font-size: 11px; cursor: pointer; }
-.account-menu a:hover, .account-menu button:hover { background: var(--soft); color: var(--teal-deep); }
-.header-actions { position: relative; }
-@media (max-width: 700px) { .notification-button { width: 35px; height: 35px; } .notification-menu { right: 45px; } }
+/* Patient account notifications and compact assistant launcher. */
+.notification-button { position: relative; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--teal-deep); cursor: pointer; }
+.notification-button b { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 999px; background: #e94f55; color: #fff; font-size: 9px; line-height: 16px; }
+.notifications-panel { position: fixed; z-index: 24; top: 70px; left: 24px; width: min(360px, calc(100vw - 32px)); max-height: 380px; overflow: auto; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.notification-item { padding: 11px; border-bottom: 1px solid var(--line); }.notification-item:last-child { border-bottom: 0; }.notification-item strong { font-size: 11px; }.notification-item p { margin: 4px 0; color: var(--muted); font-size: 10px; line-height: 1.7; }.notification-item small, .notification-empty { color: var(--muted); font-size: 9px; }.notification-item.is-read { opacity: .72; }
+.assistant-fab { position: fixed; z-index: 23; right: 22px; bottom: 22px; display: inline-flex; align-items: center; gap: 7px; min-height: 48px; padding: 0 14px; border: 0; border-radius: 999px; background: #e94f55; color: #fff; box-shadow: 0 12px 28px rgba(16,42,67,.25); cursor: pointer; font-size: 10px; font-weight: 800; }.assistant-fab span { font-size: 18px; }.assistant-section[hidden] { display: none; }.assistant-section.is-open { position: fixed; z-index: 22; right: 22px; bottom: 82px; width: min(720px, calc(100vw - 32px)); max-height: min(680px, calc(100vh - 110px)); overflow: auto; padding: 20px; border-radius: 16px; box-shadow: 0 22px 70px rgba(16,42,67,.28); }.assistant-section.is-open .assistant-layout { grid-template-columns: 1fr; gap: 14px; }.assistant-section.is-open .section-heading { display: none; }.assistant-close { margin-inline-start: auto; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(16,42,67,.08); color: var(--ink); cursor: pointer; font-size: 18px; }.assistant-section.is-open .assistant-card { box-shadow: none; }
+@media (max-width: 680px) { .notifications-panel { top: 62px; left: 16px; }.assistant-fab { right: 16px; bottom: 16px; }.assistant-section.is-open { right: 16px; bottom: 74px; width: calc(100vw - 32px); padding: 12px; } }
+
+
+
+/* Assistant is a full page section opened from the top navigation. */
+.main-nav a[href="#dawaey-assistant"] { color: #e94f55; font-weight: 800; }
+.main-nav a[href="#dawaey-assistant"]::after { background: #e94f55; }
+.assistant-section { display: block; }
+
+.account-menu-wrap { position:relative; }
+.account-trigger { min-height:40px; padding:0 16px; border:1px solid var(--teal-deep); border-radius:4px; background:var(--surface); color:var(--teal-deep); cursor:pointer; font-size:11px; font-weight:800; }
+.account-trigger:hover { background:var(--teal-deep); color:#fff; }
+.account-menu { position:absolute; z-index:30; top:calc(100% + 10px); inset-inline-end:0; display:grid; min-width:190px; padding:7px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:var(--shadow); }
+.account-menu a, .account-menu button { display:block; width:100%; padding:10px 12px; border:0; border-radius:6px; background:transparent; color:var(--ink); cursor:pointer; font:inherit; font-size:11px; text-align:right; text-decoration:none; }
+.account-menu a:hover, .account-menu button:hover { background:var(--surface-soft); color:var(--teal-deep); }
+.account-menu button { color:var(--danger); }
+.gps-tool, .gps-directory-button { font-weight:800; }
+.gps-directory-button { display:inline-flex; align-items:center; gap:6px; margin-top:9px; padding:8px 10px; border:1px solid var(--teal); border-radius:6px; background:var(--teal-pale); color:var(--teal-deep); cursor:pointer; font-size:10px; }
+.gps-directory-button:hover { background:var(--teal); color:#fff; }

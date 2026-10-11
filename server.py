@@ -424,6 +424,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/area":
             self.handle_area()
             return
+        if route == "/api/nearby-pharmacies":
+            self.handle_nearby_pharmacies()
+            return
         if route == "/api/session":
             self.handle_session()
             return
@@ -725,6 +728,64 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         except (OSError, json.JSONDecodeError, KeyError) as error:
             self.send_json(503, {"error": "بيانات المصدر غير متاحة حاليًا."})
             self.log_error("Could not load workbook data: %s", error)
+
+    def handle_nearby_pharmacies(self) -> None:
+        """Return nearby pharmacies from OpenStreetMap, including branches outside our directory."""
+        global LAST_GEOCODE_REQUEST
+        parameters = parse_qs(urlsplit(self.path).query)
+        try:
+            latitude = float(parameters.get("lat", [""])[0])
+            longitude = float(parameters.get("lon", [""])[0])
+        except ValueError:
+            latitude = longitude = None
+        area = str(parameters.get("area", [""])[0]).strip()
+        if latitude is None or longitude is None:
+            if not area:
+                self.send_json(400, {"error": "اكتب المحافظة أو استخدم زر GPS."})
+                return
+            with GEOCODE_LOCK:
+                wait = 1.0 - (time.time() - LAST_GEOCODE_REQUEST)
+                if wait > 0:
+                    time.sleep(wait)
+                query = urllib.parse.quote(f"{area}, Egypt")
+                request = Request(f"https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=eg&q={query}", headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"})
+                try:
+                    with urlopen(request, timeout=8) as response:
+                        places = json.loads(response.read().decode("utf-8"))
+                    LAST_GEOCODE_REQUEST = time.time()
+                except (OSError, URLError, TimeoutError, json.JSONDecodeError):
+                    self.send_json(503, {"error": "تعذر تحديد المكان الآن؛ جرّب GPS أو اسم محافظة أو منطقة أوضح."})
+                    return
+            if not places:
+                self.send_json(404, {"error": "المكان غير موجود في مصر. جرّب اسم المحافظة أو المنطقة."})
+                return
+            latitude, longitude = float(places[0]["lat"]), float(places[0]["lon"])
+        try:
+            radius = min(max(int(float(parameters.get("radius", ["10000"])[0])), 1000), 25000)
+        except ValueError:
+            radius = 10000
+        overpass_query = f"[out:json][timeout:18];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
+        request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+        payload = None
+        for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
+            try:
+                request.full_url = endpoint
+                with urlopen(request, timeout=24) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                print(f"Overpass provider failed: {error}", file=sys.stderr)
+        if payload is None:
+            self.send_json(503, {"error": "خدمة دليل GPS غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
+            return
+        pharmacies = []
+        for item in payload.get("elements", []):
+            tags = item.get("tags") or {}
+            name = tags.get("name:ar") or tags.get("name") or "صيدلية قريبة"
+            address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
+            phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"
+            pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": phone, "source": "OpenStreetMap", "lat": item.get("lat") or (item.get("center") or {}).get("lat"), "lon": item.get("lon") or (item.get("center") or {}).get("lon")})
+        self.send_json(200, {"pharmacies": pharmacies[:100], "source": "OpenStreetMap", "latitude": latitude, "longitude": longitude})
 
     def handle_area(self) -> None:
         global LAST_GEOCODE_REQUEST

@@ -10,6 +10,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" href="static/img/dawaey-mark-clean.png" type="image/png">
+  <script>
+    (function () {
+      if (location.protocol === "file:") return;
+      fetch("/api/session", { credentials: "same-origin", cache: "no-store" }).then(function (response) { return response.json(); }).then(function (session) {
+        if (!session.user) location.replace("auth.html?next=/index.html");
+      }).catch(function () { location.replace("auth.html?next=/index.html"); });
+    }());
+  </script>
   <link rel="stylesheet" href="home.css?v=patient-gps-9">
   <link rel="stylesheet" href="static/css/tokens.css?v=patient-gps-9">
   <script src="home.js?v=donation-8" defer></script>

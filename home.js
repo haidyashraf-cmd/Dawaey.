@@ -633,18 +633,43 @@ async function start() {
     updateSavedList();
     renderAreaResults();
     const loginLink = document.querySelector(".login-link");
+    const accountMenu = document.querySelector("#account-menu");
     if (loginLink && state.user) {
       loginLink.textContent = state.user.name;
       loginLink.setAttribute("aria-label", `حساب ${state.user.name}`);
-      if (state.user.role === "patient") {
-        loginLink.href = "#my-medicines";
-        loginLink.title = "أدويتي المحفوظة وتسجيل الخروج";
-        const logout = document.createElement("button");
-        logout.type = "button"; logout.className = "account-logout"; logout.textContent = "تسجيل الخروج";
-        logout.addEventListener("click", async () => { try { const response = await fetch("/api/logout", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" }); if (!response.ok) throw new Error(); state.user = null; logout.remove(); loginLink.textContent = "دخول / حساب جديد"; loginLink.href = "auth.html"; loginLink.removeAttribute("title"); showToast("تم تسجيل الخروج."); applyRoleVisibility(); } catch { showToast("تعذر تسجيل الخروج."); } });
-        loginLink.insertAdjacentElement("afterend", logout);
+      loginLink.setAttribute("aria-haspopup", "menu");
+      loginLink.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!accountMenu) return;
+        accountMenu.hidden = !accountMenu.hidden;
+        loginLink.setAttribute("aria-expanded", String(!accountMenu.hidden));
+      });
+      if (accountMenu) {
+        accountMenu.innerHTML = `${state.user.role === "patient" ? '<a href="#my-medicines" role="menuitem">أدويتي المحفوظة</a>' : '<a href="pharmacy.html" role="menuitem">لوحة الصيدلية</a>'}<button type="button" role="menuitem" class="account-logout">تسجيل الخروج</button>`;
+        accountMenu.querySelector(".account-logout").addEventListener("click", async () => {
+          try {
+            const response = await fetch("/api/logout", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" });
+            if (!response.ok) throw new Error();
+            window.location.assign("auth.html");
+          } catch { showToast("تعذر تسجيل الخروج."); }
+        });
+        accountMenu.querySelector("a").addEventListener("click", () => { accountMenu.hidden = true; });
       }
     }
+    const notificationButton = document.querySelector("#notification-button");
+    const notificationMenu = document.querySelector("#notification-menu");
+    notificationButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!notificationMenu) return;
+      notificationMenu.hidden = !notificationMenu.hidden;
+      notificationButton.setAttribute("aria-expanded", String(!notificationMenu.hidden));
+    });
+    document.addEventListener("click", () => {
+      if (accountMenu) accountMenu.hidden = true;
+      if (notificationMenu) notificationMenu.hidden = true;
+      notificationButton?.setAttribute("aria-expanded", "false");
+    });
     applyRoleVisibility();
   } catch {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");

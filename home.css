@@ -477,3 +477,16 @@ body { background: var(--paper); }
 .gps-button { width: 44px; flex: 0 0 44px; border: 1px solid rgba(21,102,116,.25); border-radius: 12px; color: #156674; background: #fff; cursor: pointer; font-size: 21px; }
 .gps-button:hover { background: #eaf7f5; }
 .account-logout { border: 1px solid rgba(180,55,74,.25); border-radius: 999px; padding: 8px 12px; color: #a6384a; background: #fff; cursor: pointer; font: inherit; font-size: .85rem; }
+
+.notification-button { position: relative; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--navy); cursor: pointer; font-size: 22px; }
+.notification-button:hover { border-color: var(--teal-deep); color: var(--teal-deep); }
+.notification-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; vertical-align: middle; }
+.notification-badge { position: absolute; top: -5px; left: -5px; min-width: 17px; padding: 2px 4px; border-radius: 99px; background: var(--danger); color: #fff; font-size: 9px; }
+.notification-menu, .account-menu { position: absolute; z-index: 20; top: calc(100% + 9px); right: 0; min-width: 190px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 14px 30px rgba(16,42,67,.16); }
+.notification-menu { right: 55px; }
+.notification-menu p { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.account-menu { right: 0; }
+.account-menu a, .account-menu button { display: block; width: 100%; padding: 9px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--navy); text-align: right; text-decoration: none; font: inherit; font-size: 11px; cursor: pointer; }
+.account-menu a:hover, .account-menu button:hover { background: var(--soft); color: var(--teal-deep); }
+.header-actions { position: relative; }
+@media (max-width: 700px) { .notification-button { width: 35px; height: 35px; } .notification-menu { right: 45px; } }

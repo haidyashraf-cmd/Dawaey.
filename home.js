@@ -660,6 +660,12 @@ function setupEvents() {
 }
 
 async function start() {
+  // Initialize visible sections immediately; API loading must not delay donation or assistant interactions.
+  setupTabs();
+  setupDemo();
+  setupObservers();
+  setupEvents();
+  setupDonationAndAssistant();
   try {
     const [dataResponse, sessionResponse] = await Promise.all([
       fetch("/api/bootstrap", { credentials: "same-origin" }),
@@ -685,11 +691,6 @@ async function start() {
     showToast("بيانات البحث مش متاحة؛ افتح الصفحة من الخادم المحلي");
   }
   applyRoleVisibility();
-  setupTabs();
-  setupDemo();
-  setupObservers();
-  setupEvents();
-  setupDonationAndAssistant();
   try {
     const savedTheme = localStorage.getItem("dawaey-theme");
     if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);

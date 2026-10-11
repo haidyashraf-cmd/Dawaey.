@@ -9,10 +9,6 @@ import re
 import secrets
 import sqlite3
 import sys
-import csv
-import io
-import zipfile
-import xml.etree.ElementTree as ET
 import threading
 import time
 import urllib.parse
@@ -88,8 +84,6 @@ def initialize_database() -> None:
                 medicine TEXT NOT NULL,
                 area TEXT NOT NULL,
                 quantity TEXT NOT NULL,
-                quantity_unit TEXT NOT NULL DEFAULT 'شريط',
-                national_id TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'completed', 'rejected')),
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -113,30 +107,8 @@ def initialize_database() -> None:
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
-            CREATE TABLE IF NOT EXISTS pharmacy_imports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                source_name TEXT NOT NULL,
-                row_order INTEGER NOT NULL,
-                row_json TEXT NOT NULL,
-                imported_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS pharmacy_imports_account ON pharmacy_imports(account_id, row_order);
             """
         )
-        for column, definition in (("quantity_unit", "TEXT NOT NULL DEFAULT 'شريط'"), ("national_id", "TEXT NOT NULL DEFAULT ''")):
-            try:
-                connection.execute(f"ALTER TABLE donation_requests ADD COLUMN {column} {definition}")
-            except sqlite3.OperationalError as error:
-                if "duplicate column name" not in str(error).lower():
-                    raise
-        # Older Railway databases were created before accepted pharmacy details were stored.
-        # Add the column without affecting existing donation requests.
-        try:
-            connection.execute("ALTER TABLE donation_requests ADD COLUMN accepted_by_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL")
-        except sqlite3.OperationalError as error:
-            if "duplicate column name" not in str(error).lower():
-                raise
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -232,52 +204,42 @@ def handle_approval_callback(callback_data: str) -> str | None:
     return status if update_pharmacy_application(account_id, status) else None
 
 
-def telegram_webhook_url() -> str:
-    base = os.environ.get("DAWAEY_PUBLIC_URL", "https://dawaey-production.up.railway.app").strip().rstrip("/")
-    return f"{base}/webhooks/telegram"
-
-
-def process_telegram_update(update: dict) -> None:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    callback = update.get("callback_query") or {}
-    data = callback.get("data", "")
-    status = handle_approval_callback(data)
-    callback_id = callback.get("id")
-    if not token or not callback_id:
-        return
-    if status:
-        external_json_request(
-            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
-            {"callback_query_id": callback_id, "text": "تم قبول طلب الصيدلية" if status == "approved" else "تم رفض طلب الصيدلية", "show_alert": True},
-        )
-        message = callback.get("message") or {}
-        chat_id = (message.get("chat") or {}).get("id")
-        message_id = message.get("message_id")
-        account_id = data.rsplit(":", 1)[-1]
-        if chat_id and message_id:
-            external_json_request(
-                f"https://api.telegram.org/bot{token}/editMessageText",
-                {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {account_id}."},
-            )
-    else:
-        external_json_request(
-            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
-            {"callback_query_id": callback_id, "text": "الطلب غير موجود أو تمت معالجته مسبقًا.", "show_alert": True},
-        )
-
-
-def configure_telegram_webhook() -> None:
+def telegram_poll_loop() -> None:
+    global TELEGRAM_OFFSET
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         return
-    try:
-        result = external_json_request(
-            f"https://api.telegram.org/bot{token}/setWebhook",
-            {"url": telegram_webhook_url(), "allowed_updates": ["callback_query"], "drop_pending_updates": False},
-        )
-        print(f"Telegram webhook configured: {result.get('ok', False)}", file=sys.stderr)
-    except Exception as error:
-        print(f"Telegram webhook setup failed: {error}", file=sys.stderr)
+    while True:
+        try:
+            query = urllib.parse.urlencode({"timeout": 20, "offset": TELEGRAM_OFFSET})
+            with urlopen(f"https://api.telegram.org/bot{token}/getUpdates?{query}", timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            for update in result.get("result", []):
+                TELEGRAM_OFFSET = max(TELEGRAM_OFFSET, int(update.get("update_id", 0)) + 1)
+                callback = update.get("callback_query") or {}
+                data = callback.get("data", "")
+                status = handle_approval_callback(data)
+                if status:
+                    callback_id = callback.get("id")
+                    if callback_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": "تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب"})
+                    message = callback.get("message") or {}
+                    chat_id = (message.get("chat") or {}).get("id")
+                    message_id = message.get("message_id")
+                    if chat_id and message_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
+        except Exception as error:
+            print(f"Telegram polling failed: {error}", file=sys.stderr)
+            time.sleep(5)
+
+
+def start_telegram_polling() -> None:
+    global TELEGRAM_THREAD_STARTED
+    if TELEGRAM_THREAD_STARTED or not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        return
+    TELEGRAM_THREAD_STARTED = True
+    threading.Thread(target=telegram_poll_loop, name="telegram-approval-poller", daemon=True).start()
+
 
 def create_session(connection: sqlite3.Connection, account_id: int) -> str:
     token = secrets.token_urlsafe(32)
@@ -352,6 +314,13 @@ def google_user_profile(access_token: str) -> dict:
 
 class DawaeyHandler(SimpleHTTPRequestHandler):
     server_version = "DawaeyLocal/1.0"
+
+    def end_headers(self) -> None:
+        path = urlsplit(self.path).path
+        if path.endswith((".html", ".css", ".js")):
+            self.send_header("Cache-Control", "no-store, max-age=0, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -479,17 +448,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlsplit(self.path).path
-        if not route.startswith("/api/") and route not in {"/webhooks/whatsapp", "/webhooks/telegram"}:
+        if not route.startswith("/api/") and route != "/webhooks/whatsapp":
             self.send_error(404)
             return
         if route.startswith("/api/") and not self.verify_origin():
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            if route == "/api/pharmacy/import":
-                self.handle_pharmacy_import()
-                return
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/webhooks/telegram", "/webhooks/whatsapp") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
@@ -502,12 +468,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.handle_mark_notifications_read()
             elif route == "/api/logout":
                 self.handle_logout()
-            elif route == "/webhooks/telegram":
-                try:
-                    process_telegram_update(payload)
-                except Exception as error:
-                    self.log_error("Telegram webhook failed: %s", error)
-                self.send_json(200, {"ok": True})
             elif route == "/webhooks/whatsapp":
                 self.handle_whatsapp_webhook(payload)
             else:
@@ -542,8 +502,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "medicine": row["medicine"],
             "area": row["area"],
             "quantity": row["quantity"],
-            "unit": row["quantity_unit"] if "quantity_unit" in row.keys() else "شريط",
-            "nationalId": row["national_id"] if "national_id" in row.keys() else "",
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
@@ -554,7 +512,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not self.require_role(connection, "pharmacy"):
                 return
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, quantity_unit, national_id, status, created_at, updated_at "
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
         self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
@@ -563,12 +521,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         medicine = str(payload.get("medicine", "")).strip()
         area = str(payload.get("area", "")).strip()
         quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
-        unit = str(payload.get("unit", "شريط")).strip()
-        national_id = str(payload.get("nationalId", "")).translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")).strip()
-        if unit not in {"شريط", "علبة"}:
-            raise ValueError("اختار نوع الوحدة: شريط أو علبة.")
-        if not re.fullmatch(r"[23]\d{13}", national_id):
-            raise ValueError("اكتب National Id مصري صحيح مكوّنًا من 14 رقمًا.")
         if not medicine or len(medicine) > 160:
             raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
@@ -583,21 +535,17 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
                 account = connection.execute(
-                    "SELECT sessions.account_id, accounts.role FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
+                    "SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
                     (token_hash, now),
                 ).fetchone()
-                if account and account["role"] == "patient":
-                    account_id = account["account_id"]
-            if not account_id:
-                self.send_json(401, {"error": "سجّل دخولك بحساب مريض أولًا حتى يصلك إشعار قبول التبرع."})
-                return
+                account_id = account["account_id"] if account else None
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, quantity_unit, national_id, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, unit, national_id, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, quantity_unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -610,27 +558,21 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         with closing(connect_database()) as connection, connection:
             if not self.require_role(connection, "pharmacy"):
                 return
-            pharmacy_account = self.authenticated_account(connection)
             previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
             cursor = connection.execute(
-                "UPDATE donation_requests SET status = ?, updated_at = ?, accepted_by_account_id = CASE WHEN ? = 'accepted' THEN ? ELSE accepted_by_account_id END WHERE id = ?",
-                (status, now, status, pharmacy_account["id"] if pharmacy_account else None, donation_id),
+                "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, donation_id),
             )
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
             if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
-                pharmacy = connection.execute("SELECT pharmacy_name, district, whatsapp FROM pharmacy_applications WHERE account_id = ?", (pharmacy_account["id"],)).fetchone() if pharmacy_account else None
-                pharmacy_name = pharmacy["pharmacy_name"] if pharmacy else "الصيدلية"
-                pharmacy_area = pharmacy["district"] if pharmacy else ""
-                pharmacy_phone = pharmacy["whatsapp"] if pharmacy else ""
-                contact = f" تواصل مع {pharmacy_name}" + (f" في {pharmacy_area}" if pharmacy_area else "") + (f" على {pharmacy_phone}" if pharmacy_phone else "") + "."
                 connection.execute(
                     "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
-                    (previous["account_id"], "تم قبول تبرعك", f"وافقت {pharmacy_name} على استلام تبرعك بدواء {previous['medicine']}.{contact}", donation_id, now),
+                    (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, quantity_unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
@@ -663,15 +605,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             account = self.require_role(connection, "patient")
             if not account:
                 return
-            rows = connection.execute("""
-                SELECT n.id, n.kind, n.title, n.message, n.related_id, n.is_read, n.created_at,
-                       d.area, d.medicine, pa.pharmacy_name, pa.address, pa.whatsapp
-                FROM notifications n
-                LEFT JOIN donation_requests d ON d.id = n.related_id
-                LEFT JOIN pharmacy_applications pa ON pa.account_id = d.accepted_by_account_id
-                WHERE n.account_id = ? ORDER BY n.created_at DESC LIMIT 50
-            """, (account["id"],)).fetchall()
-        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "area": row["area"] or "", "medicine": row["medicine"] or "", "pharmacyName": row["pharmacy_name"] or "", "pharmacyAddress": row["address"] or "", "pharmacyPhone": row["whatsapp"] or "", "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
 
     def handle_mark_notifications_read(self) -> None:
         with closing(connect_database()) as connection, connection:
@@ -744,109 +679,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.log_error("Google OAuth failed: %s", error)
             self.redirect_to_auth("تعذر تسجيل الدخول باستخدام Google. تأكد من إعداد OAuth وحاول مرة أخرى.")
 
-    def _import_rows_from_csv(self, raw: bytes) -> list[dict]:
-        text = raw.decode("utf-8-sig", errors="replace")
-        sample = text[:4096]
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-        except csv.Error:
-            dialect = csv.excel
-        rows = list(csv.DictReader(io.StringIO(text), dialect=dialect))
-        return [{str(key or "").strip(): str(value or "").strip() for key, value in row.items() if key is not None and str(key).strip()} for row in rows]
-
-    def _import_rows_from_xlsx(self, raw: bytes) -> list[dict]:
-        with zipfile.ZipFile(io.BytesIO(raw)) as workbook:
-            shared = []
-            if "xl/sharedStrings.xml" in workbook.namelist():
-                root = ET.fromstring(workbook.read("xl/sharedStrings.xml"))
-                shared = ["".join(node.itertext()) for node in root.findall(".//{*}si")]
-            workbook_root = ET.fromstring(workbook.read("xl/workbook.xml"))
-            rels = ET.fromstring(workbook.read("xl/_rels/workbook.xml.rels"))
-            rel_map = {rel.attrib.get("Id"): rel.attrib.get("Target", "") for rel in rels}
-            sheet = workbook_root.find(".//{*}sheet")
-            if sheet is None: return []
-            rid = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
-            target = rel_map.get(rid, "worksheets/sheet1.xml")
-            target = target.lstrip("/")
-            if not target.startswith("xl/"): target = "xl/" + target
-            root = ET.fromstring(workbook.read(target))
-            matrix = []
-            for row in root.findall(".//{*}sheetData/{*}row"):
-                cells = {}
-                for cell in row.findall("{*}c"):
-                    ref = cell.attrib.get("r", "A1")
-                    col = "".join(character for character in ref if character.isalpha())
-                    value = cell.find("{*}v")
-                    text = "" if value is None else value.text or ""
-                    if cell.attrib.get("t") == "s" and text.isdigit() and int(text) < len(shared): text = shared[int(text)]
-                    if cell.attrib.get("t") == "inlineStr": text = "".join(cell.itertext())
-                    cells[col] = text
-                matrix.append(cells)
-            if not matrix: return []
-            columns = []
-            for index in range(max((len(row) for row in matrix), default=0)):
-                number = index + 1; label = ""
-                while number:
-                    number, remainder = divmod(number - 1, 26); label = chr(65 + remainder) + label
-                columns.append(label)
-            headers = [str(matrix[0].get(col, "")).strip() or f"عمود {index + 1}" for index, col in enumerate(columns)]
-            return [{headers[index]: str(row.get(col, "")).strip() for index, col in enumerate(columns) if str(row.get(col, "")).strip()} for row in matrix[1:] if any(str(value).strip() for value in row.values())]
-
-    def _parse_pharmacy_upload(self) -> tuple[str, bytes]:
-        content_type = self.headers.get("Content-Type", "")
-        match = re.search(r"boundary=([^;]+)", content_type)
-        if not match: raise ValueError("ارفع ملف Excel أو CSV من النموذج.")
-        boundary = match.group(1).strip().strip('"').encode()
-        length = int(self.headers.get("Content-Length", "0"))
-        if length < 1 or length > 8 * 1024 * 1024: raise ValueError("حجم الملف يجب ألا يتجاوز 8 ميجابايت.")
-        body = self.rfile.read(length)
-        for part in body.split(b"--" + boundary):
-            if b"Content-Disposition" not in part or b"filename=" not in part: continue
-            header, _, data = part.partition(b"\r\n\r\n")
-            filename_match = re.search(rb'filename="([^"]*)"', header)
-            filename = (filename_match.group(1).decode("utf-8", errors="replace") if filename_match else "").strip()
-            data = data.rstrip(b"\r\n-")
-            return filename, data
-        raise ValueError("لم يتم العثور على ملف في الطلب.")
-
-    @staticmethod
-    def _normalize_import_row(row: dict) -> dict:
-        aliases = {
-            "اسم الصنف": "اسم الدواء", "الدواء": "اسم الدواء", "medicine": "اسم الدواء", "name": "اسم الدواء",
-            "كود الدواء": "الكود", "code": "الكود", "sku": "الكود",
-            "الكمية": "الكمية الحالية", "الكمية المتاحة": "الكمية الحالية", "quantity": "الكمية الحالية", "stock": "الكمية الحالية",
-            "الحد الادنى": "الحد الأدنى", "حد الطلب": "الحد الأدنى", "minimum": "الحد الأدنى",
-            "الوحدة": "وحدة القياس", "unit": "وحدة القياس", "الفئة": "طبيعة الدواء", "category": "طبيعة الدواء",
-            "الاستهلاك": "الاستهلاك الشهري", "كمية الاستهلاك": "الاستهلاك الشهري", "consumption": "الاستهلاك الشهري", "monthly consumption": "الاستهلاك الشهري",
-        }
-        normalized = {}
-        for key, value in row.items():
-            clean_key = str(key or "").strip()
-            target = aliases.get(clean_key.casefold(), aliases.get(clean_key, clean_key))
-            normalized[target] = str(value or "").strip()
-        return normalized
-
-    def handle_pharmacy_import(self) -> None:
-        with closing(connect_database()) as connection:
-            account = self.require_role(connection, "pharmacy")
-            if not account: return
-            filename, raw = self._parse_pharmacy_upload()
-            suffix = Path(filename).suffix.lower()
-            try:
-                if suffix == ".csv": rows = self._import_rows_from_csv(raw)
-                elif suffix in {".xlsx", ".xlsm"}: rows = self._import_rows_from_xlsx(raw)
-                else: raise ValueError("الصيغة المدعومة هي Excel (.xlsx) أو CSV فقط.")
-            except (zipfile.BadZipFile, ET.ParseError, KeyError) as error:
-                raise ValueError("ملف Excel غير صالح أو تالف.") from error
-            rows = [self._normalize_import_row(row) for row in rows if row]
-            if not rows: raise ValueError("الملف لا يحتوي على صفوف بيانات.")
-            if len(rows) > 5000: raise ValueError("الملف يجب ألا يتجاوز 5000 صف.")
-            now = int(time.time())
-            with connection:
-                connection.execute("DELETE FROM pharmacy_imports WHERE account_id = ?", (account["id"],))
-                connection.executemany("INSERT INTO pharmacy_imports(account_id, source_name, row_order, row_json, imported_at) VALUES (?, ?, ?, ?, ?)", [(account["id"], filename, index, json.dumps(row, ensure_ascii=False), now) for index, row in enumerate(rows)])
-            self.send_json(200, {"sourceName": filename, "rows": rows, "count": len(rows), "message": f"تم استيراد {len(rows)} صف من الملف بنجاح."})
-
     def handle_pharmacy_bootstrap(self) -> None:
         token = self.get_session_token()
         if not token:
@@ -862,9 +694,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not application or application["status"] != "approved":
                 self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
                 return
-        self.handle_bootstrap(account_id=account["id"])
+        self.handle_bootstrap()
 
-    def handle_bootstrap(self, account_id: int | None = None) -> None:
+    def handle_bootstrap(self) -> None:
         try:
             workbook = json.loads(DATA_PATH.read_text(encoding="utf-8"))
             sheets = workbook["sheets"]
@@ -876,21 +708,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 {**item, **supply_by_number.get(str(item.get("م")), {})}
                 for item in inventory
             ]
-            imported = []
-            with closing(connect_database()) as connection:
-                if account_id is None:
-                    stored_rows = connection.execute("SELECT row_json, account_id FROM pharmacy_imports ORDER BY account_id, row_order").fetchall()
-                else:
-                    stored_rows = connection.execute("SELECT row_json, account_id FROM pharmacy_imports WHERE account_id = ? ORDER BY row_order", (account_id,)).fetchall()
-                imported = [(json.loads(row["row_json"]), row["account_id"]) for row in stored_rows]
-            for index, (row, owner_id) in enumerate(imported, 1):
-                normalized = dict(row)
-                normalized.setdefault("م", f"import-{owner_id}-{index}")
-                normalized.setdefault("مصدر البيانات", "ملف الصيدلية")
-                catalog.append(normalized)
-            if imported: sheets["الاصناف والكميات"] = catalog
-            source = workbook.get("source", "") + (" · مع ملف الصيدلية المرفوع" if imported else "")
-            self.send_json(200, {"source": source, "catalog": catalog, "pharmacies": pharmacies, "sheets": sheets, "importedCount": len(imported)})
+            self.send_json(200, {"source": workbook.get("source", ""), "catalog": catalog, "pharmacies": pharmacies, "sheets": sheets})
         except (OSError, json.JSONDecodeError, KeyError) as error:
             self.send_json(503, {"error": "بيانات المصدر غير متاحة حاليًا."})
             self.log_error("Could not load workbook data: %s", error)
@@ -1088,7 +906,7 @@ def main() -> None:
         raise FileNotFoundError(f"Missing published dataset: {DATA_PATH}")
     print("Dawaey published dataset loaded")
     initialize_database()
-    configure_telegram_webhook()
+    start_telegram_polling()
     port = int(os.environ.get("PORT", "5173"))
     server = ThreadingHTTPServer(("", port), DawaeyHandler)
     print(f"Dawaey server listening on http://localhost:{port}")

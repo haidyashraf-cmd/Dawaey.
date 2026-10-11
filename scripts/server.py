@@ -70,8 +70,6 @@ def initialize_database() -> None:
                 district TEXT NOT NULL,
                 opening_hours TEXT NOT NULL,
                 whatsapp TEXT NOT NULL,
-                latitude REAL,
-                longitude REAL,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -92,14 +90,30 @@ def initialize_database() -> None:
             );
             CREATE INDEX IF NOT EXISTS donation_status ON donation_requests(status);
             CREATE INDEX IF NOT EXISTS donation_created ON donation_requests(created_at DESC);
+            CREATE TABLE IF NOT EXISTS patient_saved_medicines (
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                medicine_key TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (account_id, medicine_key)
+            );
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                related_id TEXT,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
             """
         )
-        # Backward-compatible migration for databases created before GPS support.
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
-        if "latitude" not in columns:
-            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
-        if "longitude" not in columns:
-            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN longitude REAL")
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)").fetchall()}
+        if "national_id" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN national_id TEXT NOT NULL DEFAULT ''")
+        if "unit" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN unit TEXT NOT NULL DEFAULT 'غير محددة'")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -138,8 +152,9 @@ def update_pharmacy_application(account_id: int, status: str) -> bool:
 def send_telegram_notification(account_id: int, details: dict) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id:
-        return
+    missing = [name for name, value in (("TELEGRAM_BOT_TOKEN", token), ("TELEGRAM_CHAT_ID", chat_id)) if not value]
+    if missing:
+        raise RuntimeError(f"Telegram configuration is missing: {', '.join(missing)}")
     text = ("طلب تسجيل صيدلية جديد\n\n"
             f"الصيدلية: {details['pharmacyName']}\n"
             f"المسؤول: {details['pharmacistName']}\n"
@@ -173,12 +188,16 @@ def send_whatsapp_notification(account_id: int, details: dict) -> None:
     external_json_request(f"https://graph.facebook.com/v23.0/{phone_id}/messages", payload, {"Authorization": f"Bearer {token}"})
 
 
-def notify_pharmacy_application(account_id: int, details: dict) -> None:
+def notify_pharmacy_application(account_id: int, details: dict) -> bool:
+    telegram_sent = False
     for sender in (send_telegram_notification, send_whatsapp_notification):
         try:
             sender(account_id, details)
+            if sender is send_telegram_notification:
+                telegram_sent = True
         except Exception as error:
             print(f"Notification failed ({sender.__name__}): {error}", file=sys.stderr)
+    return telegram_sent
 
 
 def handle_approval_callback(callback_data: str) -> str | None:
@@ -188,37 +207,6 @@ def handle_approval_callback(callback_data: str) -> str | None:
     status = "approved" if match.group(1) == "approve" else "rejected"
     account_id = int(match.group(2))
     return status if update_pharmacy_application(account_id, status) else None
-
-
-def telegram_callback_result(callback: dict, token: str) -> str | None:
-    data = str(callback.get("data", ""))
-    status = handle_approval_callback(data)
-    callback_id = callback.get("id")
-    if callback_id:
-        text = ("تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب") if status else "الطلب غير موجود أو تم التعامل معه مسبقًا"
-        try:
-            external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": text, "show_alert": not bool(status)})
-        except Exception as error:
-            print(f"Telegram callback answer failed: {error}", file=sys.stderr)
-    if status:
-        message = callback.get("message") or {}
-        chat_id = (message.get("chat") or {}).get("id")
-        message_id = message.get("message_id")
-        if chat_id and message_id:
-            try:
-                external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
-            except Exception as error:
-                print(f"Telegram message update failed: {error}", file=sys.stderr)
-    return status
-
-
-def handle_telegram_webhook(self, payload: dict) -> None:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if token:
-        callback = payload.get("callback_query") or {}
-        if callback:
-            telegram_callback_result(callback, token)
-    self.send_json(200, {"ok": True})
 
 
 def telegram_poll_loop() -> None:
@@ -234,8 +222,17 @@ def telegram_poll_loop() -> None:
             for update in result.get("result", []):
                 TELEGRAM_OFFSET = max(TELEGRAM_OFFSET, int(update.get("update_id", 0)) + 1)
                 callback = update.get("callback_query") or {}
-                if callback:
-                    telegram_callback_result(callback, token)
+                data = callback.get("data", "")
+                status = handle_approval_callback(data)
+                if status:
+                    callback_id = callback.get("id")
+                    if callback_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": "تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب"})
+                    message = callback.get("message") or {}
+                    chat_id = (message.get("chat") or {}).get("id")
+                    message_id = message.get("message_id")
+                    if chat_id and message_id:
+                        external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
         except Exception as error:
             print(f"Telegram polling failed: {error}", file=sys.stderr)
             time.sleep(5)
@@ -243,18 +240,8 @@ def telegram_poll_loop() -> None:
 
 def start_telegram_polling() -> None:
     global TELEGRAM_THREAD_STARTED
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if TELEGRAM_THREAD_STARTED or not token:
+    if TELEGRAM_THREAD_STARTED or not os.environ.get("TELEGRAM_BOT_TOKEN"):
         return
-    public_url = os.environ.get("DAWAEY_PUBLIC_URL", "").strip().rstrip("/")
-    try:
-        if public_url:
-            external_json_request(f"https://api.telegram.org/bot{token}/setWebhook", {"url": f"{public_url}/webhooks/telegram"})
-            print("Telegram webhook configured", flush=True)
-            return
-        external_json_request(f"https://api.telegram.org/bot{token}/deleteWebhook", {"drop_pending_updates": False})
-    except Exception as error:
-        print(f"Telegram delivery configuration failed: {error}", file=sys.stderr)
     TELEGRAM_THREAD_STARTED = True
     threading.Thread(target=telegram_poll_loop, name="telegram-approval-poller", daemon=True).start()
 
@@ -333,6 +320,13 @@ def google_user_profile(access_token: str) -> dict:
 class DawaeyHandler(SimpleHTTPRequestHandler):
     server_version = "DawaeyLocal/1.0"
 
+    def end_headers(self) -> None:
+        path = urlsplit(self.path).path
+        if path.endswith((".html", ".css", ".js")):
+            self.send_header("Cache-Control", "no-store, max-age=0, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -376,23 +370,38 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
-    def has_active_session(self) -> bool:
+    def authenticated_account(self, connection: sqlite3.Connection) -> sqlite3.Row | None:
         token = self.get_session_token()
         if not token:
-            return False
+            return None
         token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
-        with closing(connect_database()) as connection:
-            row = connection.execute("SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?", (token_hash, int(time.time()))).fetchone()
-        return bool(row)
+        return connection.execute(
+            "SELECT accounts.* FROM sessions JOIN accounts ON accounts.id = sessions.account_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
+            (token_hash, int(time.time())),
+        ).fetchone()
+
+    def require_role(self, connection: sqlite3.Connection, role: str) -> sqlite3.Row | None:
+        account = self.authenticated_account(connection)
+        if not account or account["role"] != role:
+            self.send_json(403, {"error": "هذه الخدمة متاحة للحساب المناسب فقط."})
+            return None
+        if role == "pharmacy":
+            application = connection.execute("SELECT status FROM pharmacy_applications WHERE account_id = ?", (account["id"],)).fetchone()
+            if not application or application["status"] != "approved":
+                self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
+                return None
+        return account
 
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
-        if route in {"/", "/index.html"} and not self.has_active_session():
-            self.send_response(302)
-            self.send_header("Location", "/auth.html?next=/index.html")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            return
+        if route in {"/", "/index.html"}:
+            with closing(connect_database()) as connection:
+                if not self.authenticated_account(connection):
+                    self.send_response(302)
+                    self.send_header("Location", "/auth.html")
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return
         if route == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -415,6 +424,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/area":
             self.handle_area()
             return
+        if route == "/api/nearby-pharmacies":
+            self.handle_nearby_pharmacies()
+            return
         if route == "/api/session":
             self.handle_session()
             return
@@ -423,6 +435,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         if route == "/api/donations":
             self.handle_donations()
+            return
+        if route == "/api/saved-medicines":
+            self.handle_saved_medicines()
+            return
+        if route == "/api/notifications":
+            self.handle_notifications()
             return
         if route == "/webhooks/whatsapp":
             self.handle_whatsapp_verification()
@@ -438,26 +456,28 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlsplit(self.path).path
-        if not route.startswith("/api/") and route not in {"/webhooks/whatsapp", "/webhooks/telegram"}:
+        if not route.startswith("/api/") and route != "/webhooks/whatsapp":
             self.send_error(404)
             return
         if route.startswith("/api/") and not self.verify_origin():
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/webhooks/whatsapp", "/webhooks/telegram") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
                 self.handle_login(payload)
             elif route == "/api/donations":
                 self.handle_create_donation(payload)
+            elif route == "/api/saved-medicines":
+                self.handle_save_medicine(payload)
+            elif route == "/api/notifications/read":
+                self.handle_mark_notifications_read()
             elif route == "/api/logout":
                 self.handle_logout()
             elif route == "/webhooks/whatsapp":
                 self.handle_whatsapp_webhook(payload)
-            elif route == "/webhooks/telegram":
-                handle_telegram_webhook(self, payload)
             else:
                 self.send_json(404, {"error": "المسار غير موجود."})
         except ValueError as error:
@@ -490,6 +510,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "medicine": row["medicine"],
             "area": row["area"],
             "quantity": row["quantity"],
+            "unit": row["unit"],
+            "nationalId": row["national_id"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
@@ -497,42 +519,30 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def handle_donations(self) -> None:
         with closing(connect_database()) as connection:
+            if not self.require_role(connection, "pharmacy"):
+                return
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
         self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
 
     def handle_create_donation(self, payload: dict) -> None:
+        medicine = str(payload.get("medicine", "")).strip()
         area = str(payload.get("area", "")).strip()
-        raw_items = payload.get("items")
-        if isinstance(raw_items, list):
-            items = []
-            for raw in raw_items[:12]:
-                if not isinstance(raw, dict):
-                    continue
-                medicine_item = str(raw.get("medicine", "")).strip()
-                quantity_item = str(raw.get("quantity", "1")).strip() or "1"
-                unit_item = str(raw.get("unit", "وحدة")).strip() or "وحدة"
-                if medicine_item:
-                    if len(medicine_item) > 120 or len(quantity_item) > 20 or len(unit_item) > 30:
-                        raise ValueError("راجع اسم الدواء أو الكمية أو الوحدة.")
-                    if not re.fullmatch(r"\d+(?:[.,]\d+)?", quantity_item):
-                        raise ValueError("الكمية لازم تكون رقمًا صحيحًا أو عشريًا.")
-                    items.append((medicine_item, quantity_item, unit_item))
-            if not items:
-                raise ValueError("أضف نوع دواء واحدًا على الأقل.")
-            medicine = "، ".join(item[0] for item in items)
-            quantity = "، ".join(f"{item[1]} {item[2]}" for item in items)
-        else:
-            medicine = str(payload.get("medicine", "")).strip()
-            quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
-        if not medicine or len(medicine) > 500:
+        quantity = str(payload.get("quantity", "")).strip()
+        unit = str(payload.get("unit", "")).strip()
+        national_id = re.sub(r"\D", "", str(payload.get("nationalId", "")).strip())
+        if not medicine or len(medicine) > 160:
             raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
             raise ValueError("اكتب المنطقة بشكل صحيح.")
-        if len(quantity) > 500:
-            raise ValueError("الكمية غير صالحة.")
+        if not quantity or len(quantity) > 40:
+            raise ValueError("اكتب الكمية بشكل صحيح.")
+        if unit not in {"شريط", "علبة"}:
+            raise ValueError("اختار نوع الوحدة: شريط أو علبة.")
+        if not re.fullmatch(r"\d{14}", national_id):
+            raise ValueError("الرقم القومي لازم يكون 14 رقم.")
         now = int(time.time())
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
@@ -546,12 +556,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 account_id = account["account_id"] if account else None
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, unit, national_id, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -562,6 +572,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             raise ValueError("حالة طلب التبرع غير صالحة.")
         now = int(time.time())
         with closing(connect_database()) as connection, connection:
+            if not self.require_role(connection, "pharmacy"):
+                return
+            previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -569,11 +582,55 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if cursor.rowcount != 1:
                 self.send_json(404, {"error": "طلب التبرع غير موجود."})
                 return
+            if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
+                connection.execute(
+                    "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
+                    (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
+                )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
+
+    def handle_saved_medicines(self) -> None:
+        with closing(connect_database()) as connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            rows = connection.execute("SELECT medicine_key FROM patient_saved_medicines WHERE account_id = ? ORDER BY created_at", (account["id"],)).fetchall()
+        self.send_json(200, {"medicineKeys": [row["medicine_key"] for row in rows]})
+
+    def handle_save_medicine(self, payload: dict) -> None:
+        medicine_key = str(payload.get("medicineKey", "")).strip()
+        saved = bool(payload.get("saved"))
+        if not medicine_key or len(medicine_key) > 120:
+            raise ValueError("معرّف الدواء غير صالح.")
+        with closing(connect_database()) as connection, connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            if saved:
+                connection.execute("INSERT OR IGNORE INTO patient_saved_medicines(account_id, medicine_key, created_at) VALUES (?, ?, ?)", (account["id"], medicine_key, int(time.time())))
+            else:
+                connection.execute("DELETE FROM patient_saved_medicines WHERE account_id = ? AND medicine_key = ?", (account["id"], medicine_key))
+        self.send_json(200, {"ok": True, "saved": saved, "medicineKey": medicine_key})
+
+    def handle_notifications(self) -> None:
+        with closing(connect_database()) as connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+
+    def handle_mark_notifications_read(self) -> None:
+        with closing(connect_database()) as connection, connection:
+            account = self.require_role(connection, "patient")
+            if not account:
+                return
+            connection.execute("UPDATE notifications SET is_read = 1 WHERE account_id = ?", (account["id"],))
+        self.send_json(200, {"ok": True})
 
     def redirect_to_auth(self, error: str) -> None:
         self.send_response(302)
@@ -661,14 +718,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             sheets = workbook["sheets"]
             inventory = sheets.get("الاصناف والكميات", [])
             supply = sheets.get("طلبات التوريد", [])
-            pharmacies = list(sheets.get("بيانات الصيداليات", []))
-            with closing(connect_database()) as directory_connection:
-                approved = directory_connection.execute("SELECT pharmacy_name, address, district, whatsapp, latitude, longitude FROM pharmacy_applications WHERE status = 'approved'").fetchall()
-            existing = {(str(row.get("اسم الصيدلية")), str(row.get("المنطقة / العنوان المتوقع")), str(row.get("رقم التليفون / الخط الساخن"))) for row in pharmacies}
-            for row in approved:
-                candidate = {"م": f"approved-{row['pharmacy_name']}", "اسم الصيدلية": row["pharmacy_name"], "المنطقة / العنوان المتوقع": f"{row['district']} - {row['address']}", "رقم التليفون / الخط الساخن": row["whatsapp"], "latitude": row["latitude"], "longitude": row["longitude"]}
-                key = (str(candidate["اسم الصيدلية"]), str(candidate["المنطقة / العنوان المتوقع"]), str(candidate["رقم التليفون / الخط الساخن"]))
-                if key not in existing: pharmacies.append(candidate); existing.add(key)
+            pharmacies = sheets.get("بيانات الصيداليات", [])
             supply_by_number = {str(record.get("م")): record for record in supply}
             catalog = [
                 {**item, **supply_by_number.get(str(item.get("م")), {})}
@@ -678,6 +728,64 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         except (OSError, json.JSONDecodeError, KeyError) as error:
             self.send_json(503, {"error": "بيانات المصدر غير متاحة حاليًا."})
             self.log_error("Could not load workbook data: %s", error)
+
+    def handle_nearby_pharmacies(self) -> None:
+        """Return nearby pharmacies from OpenStreetMap, including branches outside our directory."""
+        global LAST_GEOCODE_REQUEST
+        parameters = parse_qs(urlsplit(self.path).query)
+        try:
+            latitude = float(parameters.get("lat", [""])[0])
+            longitude = float(parameters.get("lon", [""])[0])
+        except ValueError:
+            latitude = longitude = None
+        area = str(parameters.get("area", [""])[0]).strip()
+        if latitude is None or longitude is None:
+            if not area:
+                self.send_json(400, {"error": "اكتب المحافظة أو استخدم زر GPS."})
+                return
+            with GEOCODE_LOCK:
+                wait = 1.0 - (time.time() - LAST_GEOCODE_REQUEST)
+                if wait > 0:
+                    time.sleep(wait)
+                query = urllib.parse.quote(f"{area}, Egypt")
+                request = Request(f"https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=eg&q={query}", headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"})
+                try:
+                    with urlopen(request, timeout=8) as response:
+                        places = json.loads(response.read().decode("utf-8"))
+                    LAST_GEOCODE_REQUEST = time.time()
+                except (OSError, URLError, TimeoutError, json.JSONDecodeError):
+                    self.send_json(503, {"error": "تعذر تحديد المكان الآن؛ جرّب GPS أو اسم محافظة أو منطقة أوضح."})
+                    return
+            if not places:
+                self.send_json(404, {"error": "المكان غير موجود في مصر. جرّب اسم المحافظة أو المنطقة."})
+                return
+            latitude, longitude = float(places[0]["lat"]), float(places[0]["lon"])
+        try:
+            radius = min(max(int(float(parameters.get("radius", ["10000"])[0])), 1000), 25000)
+        except ValueError:
+            radius = 10000
+        overpass_query = f"[out:json][timeout:18];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
+        request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+        payload = None
+        for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
+            try:
+                request.full_url = endpoint
+                with urlopen(request, timeout=24) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                print(f"Overpass provider failed: {error}", file=sys.stderr)
+        if payload is None:
+            self.send_json(503, {"error": "خدمة دليل GPS غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
+            return
+        pharmacies = []
+        for item in payload.get("elements", []):
+            tags = item.get("tags") or {}
+            name = tags.get("name:ar") or tags.get("name") or "صيدلية قريبة"
+            address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
+            phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"
+            pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": phone, "source": "OpenStreetMap", "lat": item.get("lat") or (item.get("center") or {}).get("lat"), "lon": item.get("lon") or (item.get("center") or {}).get("lon")})
+        self.send_json(200, {"pharmacies": pharmacies[:100], "source": "OpenStreetMap", "latitude": latitude, "longitude": longitude})
 
     def handle_area(self) -> None:
         global LAST_GEOCODE_REQUEST
@@ -723,7 +831,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if not area:
             self.send_json(404, {"error": "ما قدرناش نحدد اسم المنطقة من موقعك."})
             return
-        self.send_json(200, {"area": str(area), "address": str(place.get("display_name") or area), "attribution": "OpenStreetMap contributors"})
+        self.send_json(200, {"area": str(area), "attribution": "OpenStreetMap contributors"})
 
     def handle_whatsapp_verification(self) -> None:
         parameters = parse_qs(urlsplit(self.path).query)
@@ -794,21 +902,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 raise ValueError("كمّل بيانات الصيدلية والصيدلي المسؤول والعنوان ومواعيد العمل.")
             if len(license_number) > 64 or len(pharmacy_name) > 120 or len(address) > 240:
                 raise ValueError("راجع طول بيانات الصيدلية.")
-            latitude_raw = str(payload.get("latitude", "")).strip()
-            longitude_raw = str(payload.get("longitude", "")).strip()
-            try:
-                latitude = float(latitude_raw) if latitude_raw else None
-                longitude = float(longitude_raw) if longitude_raw else None
-                if latitude is not None and not -90 <= latitude <= 90: raise ValueError
-                if longitude is not None and not -180 <= longitude <= 180: raise ValueError
-            except (TypeError, ValueError):
-                raise ValueError("إحداثيات GPS غير صالحة.")
             connection.execute(
-                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude),
+                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp),
             )
-        notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
-        self.send_json(202, {"status": "pending", "message": "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة."})
+        telegram_sent = notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
+        message = "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة." if telegram_sent else "تم حفظ طلب الصيدلية، لكن تعذر إرسال إشعار تيليجرام. راجع إعدادات Telegram في Railway."
+        self.send_json(202, {"status": "pending", "telegramSent": telegram_sent, "message": message})
 
     def handle_login(self, payload: dict) -> None:
         _, contact_key = normalize_contact(payload.get("contact"))

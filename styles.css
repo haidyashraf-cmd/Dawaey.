@@ -406,3 +406,6 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 .alert-group.danger h3 { color:#c93642; } .alert-group.danger h3 span { background:#ffe4e8; }
 .alert-group.warning h3 { color:#a55d00; } .alert-group.warning h3 span { background:#fff0dc; }
 @media (max-width:900px) { .table-wrap { overflow-x:auto; } .data-table { min-width:900px; } }
+
+.field-hint { display:block; margin-top:4px; color:#64748b; font-size:10px; }
+.donation-card select { min-height:44px; width:100%; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); font:inherit; }

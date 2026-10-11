@@ -484,14 +484,18 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const medicine = document.querySelector("#donation-medicine").value.trim();
     const area = document.querySelector("#donation-area").value.trim();
-    const quantity = document.querySelector("#donation-quantity").value.trim() || "غير محددة";
+    const nationalId = document.querySelector("#donation-national-id").value.replace(/\D/g, "");
+    const quantity = document.querySelector("#donation-quantity").value.trim();
+    const unit = document.querySelector("#donation-unit").value;
+    if (!/^\d{14}$/.test(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقم."); return; }
+    if (!quantity || !unit) { showToast("اكتب الكمية واختار نوع الوحدة."); return; }
     renderDonationResults(medicine, area);
     try {
       const response = await fetch("/api/donations", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine, area, quantity }),
+        body: JSON.stringify({ medicine, area, quantity, unit, nationalId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");

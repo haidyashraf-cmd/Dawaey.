@@ -109,6 +109,11 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
             """
         )
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)").fetchall()}
+        if "national_id" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN national_id TEXT NOT NULL DEFAULT ''")
+        if "unit" not in columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN unit TEXT NOT NULL DEFAULT 'غير محددة'")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -502,6 +507,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "medicine": row["medicine"],
             "area": row["area"],
             "quantity": row["quantity"],
+            "unit": row["unit"],
+            "nationalId": row["national_id"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
@@ -512,7 +519,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not self.require_role(connection, "pharmacy"):
                 return
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at "
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
         self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
@@ -520,13 +527,19 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
     def handle_create_donation(self, payload: dict) -> None:
         medicine = str(payload.get("medicine", "")).strip()
         area = str(payload.get("area", "")).strip()
-        quantity = str(payload.get("quantity", "غير محددة")).strip() or "غير محددة"
+        quantity = str(payload.get("quantity", "")).strip()
+        unit = str(payload.get("unit", "")).strip()
+        national_id = re.sub(r"\D", "", str(payload.get("nationalId", "")).strip())
         if not medicine or len(medicine) > 160:
             raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
             raise ValueError("اكتب المنطقة بشكل صحيح.")
-        if len(quantity) > 40:
-            raise ValueError("الكمية غير صالحة.")
+        if not quantity or len(quantity) > 40:
+            raise ValueError("اكتب الكمية بشكل صحيح.")
+        if unit not in {"شريط", "علبة"}:
+            raise ValueError("اختار نوع الوحدة: شريط أو علبة.")
+        if not re.fullmatch(r"\d{14}", national_id):
+            raise ValueError("الرقم القومي لازم يكون 14 رقم.")
         now = int(time.time())
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
@@ -540,12 +553,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 account_id = account["account_id"] if account else None
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, unit, national_id, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -572,7 +585,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})

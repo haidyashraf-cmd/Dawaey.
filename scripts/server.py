@@ -224,42 +224,52 @@ def handle_approval_callback(callback_data: str) -> str | None:
     return status if update_pharmacy_application(account_id, status) else None
 
 
-def telegram_poll_loop() -> None:
-    global TELEGRAM_OFFSET
+def telegram_webhook_url() -> str:
+    base = os.environ.get("DAWAEY_PUBLIC_URL", "https://dawaey-production.up.railway.app").strip().rstrip("/")
+    return f"{base}/webhooks/telegram"
+
+
+def process_telegram_update(update: dict) -> None:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    callback = update.get("callback_query") or {}
+    data = callback.get("data", "")
+    status = handle_approval_callback(data)
+    callback_id = callback.get("id")
+    if not token or not callback_id:
+        return
+    if status:
+        external_json_request(
+            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+            {"callback_query_id": callback_id, "text": "تم قبول طلب الصيدلية" if status == "approved" else "تم رفض طلب الصيدلية", "show_alert": True},
+        )
+        message = callback.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        message_id = message.get("message_id")
+        account_id = data.rsplit(":", 1)[-1]
+        if chat_id and message_id:
+            external_json_request(
+                f"https://api.telegram.org/bot{token}/editMessageText",
+                {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {account_id}."},
+            )
+    else:
+        external_json_request(
+            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+            {"callback_query_id": callback_id, "text": "الطلب غير موجود أو تمت معالجته مسبقًا.", "show_alert": True},
+        )
+
+
+def configure_telegram_webhook() -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         return
-    while True:
-        try:
-            query = urllib.parse.urlencode({"timeout": 20, "offset": TELEGRAM_OFFSET})
-            with urlopen(f"https://api.telegram.org/bot{token}/getUpdates?{query}", timeout=30) as response:
-                result = json.loads(response.read().decode("utf-8"))
-            for update in result.get("result", []):
-                TELEGRAM_OFFSET = max(TELEGRAM_OFFSET, int(update.get("update_id", 0)) + 1)
-                callback = update.get("callback_query") or {}
-                data = callback.get("data", "")
-                status = handle_approval_callback(data)
-                if status:
-                    callback_id = callback.get("id")
-                    if callback_id:
-                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": "تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب"})
-                    message = callback.get("message") or {}
-                    chat_id = (message.get("chat") or {}).get("id")
-                    message_id = message.get("message_id")
-                    if chat_id and message_id:
-                        external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
-        except Exception as error:
-            print(f"Telegram polling failed: {error}", file=sys.stderr)
-            time.sleep(5)
-
-
-def start_telegram_polling() -> None:
-    global TELEGRAM_THREAD_STARTED
-    if TELEGRAM_THREAD_STARTED or not os.environ.get("TELEGRAM_BOT_TOKEN"):
-        return
-    TELEGRAM_THREAD_STARTED = True
-    threading.Thread(target=telegram_poll_loop, name="telegram-approval-poller", daemon=True).start()
-
+    try:
+        result = external_json_request(
+            f"https://api.telegram.org/bot{token}/setWebhook",
+            {"url": telegram_webhook_url(), "allowed_updates": ["callback_query"], "drop_pending_updates": False},
+        )
+        print(f"Telegram webhook configured: {result.get('ok', False)}", file=sys.stderr)
+    except Exception as error:
+        print(f"Telegram webhook setup failed: {error}", file=sys.stderr)
 
 def create_session(connection: sqlite3.Connection, account_id: int) -> str:
     token = secrets.token_urlsafe(32)
@@ -461,17 +471,21 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlsplit(self.path).path
-        if not route.startswith("/api/") and route != "/webhooks/whatsapp":
+        if not route.startswith("/api/") and route not in {"/webhooks/whatsapp", "/webhooks/telegram"}:
             self.send_error(404)
             return
         if route.startswith("/api/") and not self.verify_origin():
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
+<<<<<<< HEAD
             if route == "/api/pharmacy/import":
                 self.handle_pharmacy_import()
                 return
             payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/webhooks/whatsapp") else {}
+=======
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/webhooks/telegram", "/webhooks/whatsapp") else {}
+>>>>>>> 1ec30f5 (Fix Telegram pharmacy approval callbacks)
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
@@ -484,6 +498,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.handle_mark_notifications_read()
             elif route == "/api/logout":
                 self.handle_logout()
+            elif route == "/webhooks/telegram":
+                try:
+                    process_telegram_update(payload)
+                except Exception as error:
+                    self.log_error("Telegram webhook failed: %s", error)
+                self.send_json(200, {"ok": True})
             elif route == "/webhooks/whatsapp":
                 self.handle_whatsapp_webhook(payload)
             else:
@@ -1056,7 +1076,7 @@ def main() -> None:
         raise FileNotFoundError(f"Missing published dataset: {DATA_PATH}")
     print("Dawaey published dataset loaded")
     initialize_database()
-    start_telegram_polling()
+    configure_telegram_webhook()
     port = int(os.environ.get("PORT", "5173"))
     server = ThreadingHTTPServer(("", port), DawaeyHandler)
     print(f"Dawaey server listening on http://localhost:{port}")

@@ -223,32 +223,59 @@ def handle_approval_callback(callback_data: str) -> str | None:
     return status if update_pharmacy_application(account_id, status) else None
 
 
+def delete_telegram_webhook(token: str) -> None:
+    """Allow long polling to recover if an old Telegram webhook is still set."""
+    try:
+        result = external_json_request(f"https://api.telegram.org/bot{token}/deleteWebhook", {"drop_pending_updates": False})
+        if not result.get("ok"):
+            print(f"Telegram deleteWebhook failed: {result}", file=sys.stderr)
+    except Exception as error:
+        print(f"Telegram deleteWebhook request failed: {error}", file=sys.stderr)
+
+
 def telegram_poll_loop() -> None:
     global TELEGRAM_OFFSET
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         return
+    webhook_reset = False
     while True:
         try:
             query = urllib.parse.urlencode({"timeout": 20, "offset": TELEGRAM_OFFSET})
             with urlopen(f"https://api.telegram.org/bot{token}/getUpdates?{query}", timeout=30) as response:
                 result = json.loads(response.read().decode("utf-8"))
+            if not result.get("ok", True):
+                raise RuntimeError(f"Telegram getUpdates failed: {result}")
             for update in result.get("result", []):
                 TELEGRAM_OFFSET = max(TELEGRAM_OFFSET, int(update.get("update_id", 0)) + 1)
                 callback = update.get("callback_query") or {}
                 data = callback.get("data", "")
-                status = handle_approval_callback(data)
+                try:
+                    status = handle_approval_callback(data)
+                except Exception as error:
+                    status = None
+                    print(f"Telegram approval callback failed for {data!r}: {error}", file=sys.stderr)
+                callback_id = callback.get("id")
+                if callback_id:
+                    callback_text = ("تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب") if status else "الطلب غير موجود أو تم التعامل معه مسبقًا"
+                    try:
+                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": callback_text, "show_alert": not bool(status)})
+                    except Exception as error:
+                        print(f"Telegram callback acknowledgement failed: {error}", file=sys.stderr)
                 if status:
-                    callback_id = callback.get("id")
-                    if callback_id:
-                        external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": "تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب"})
                     message = callback.get("message") or {}
                     chat_id = (message.get("chat") or {}).get("id")
                     message_id = message.get("message_id")
                     if chat_id and message_id:
-                        external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
+                        try:
+                            external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
+                        except Exception as error:
+                            print(f"Telegram message update failed: {error}", file=sys.stderr)
         except Exception as error:
             print(f"Telegram polling failed: {error}", file=sys.stderr)
+            if not webhook_reset and "409" in str(error):
+                delete_telegram_webhook(token)
+                webhook_reset = True
             time.sleep(5)
 
 

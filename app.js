@@ -27,6 +27,7 @@ const state = {
   alertSignature: "",
   alertTimer: null,
   donations: [],
+  externalPharmacies: [],
 };
 
 const numberFormat = new Intl.NumberFormat("ar-EG");
@@ -258,7 +259,7 @@ function updateInventoryResults() {
   if (!container) return;
 
   container.innerHTML = `
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>اسم الدواء</th><th>الكود</th><th>نوع الوحدة</th><th>الكمية الحالية</th><th>عدد الشرايط</th><th>عدد العلب</th><th>الحالة</th><th>حد الطلب</th><th>توريد مقترح</th></tr></thead><tbody>${inventoryTableRows(visibleRecords)}</tbody></table></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>اسم الدواء</th><th>الكود</th><th>نوع العبوة</th><th>الكمية الحالية</th><th>عدد الشرايط</th><th>عدد العلب</th><th>الحالة</th><th>حد الطلب</th><th>توريد مقترح</th></tr></thead><tbody>${inventoryTableRows(visibleRecords)}</tbody></table></div>
     <div class="pagination"><span class="pagination-label">${results.length ? `عرض ${formatNumber(start + 1)}–${formatNumber(Math.min(start + pageSize, results.length))} من ${formatNumber(results.length)}` : "لا توجد نتائج"}</span><div class="pagination-actions"><button class="page-button" data-page="prev" ${state.inventoryPage === 0 ? "disabled" : ""}>السابق</button><button class="page-button" disabled>${formatNumber(state.inventoryPage + 1)} / ${formatNumber(pageCount)}</button><button class="page-button" data-page="next" ${state.inventoryPage >= pageCount - 1 ? "disabled" : ""}>التالي</button></div></div>
   `;
   const count = document.querySelector("#inventory-count");
@@ -298,19 +299,21 @@ function pharmacyCard(group) {
 function updatePharmacyResults() {
   const query = state.pharmacyQuery.trim().toLocaleLowerCase();
   const results = getPharmacyGroups().filter((group) => [group.name, ...group.records.flatMap((record) => [record["المنطقة / العنوان المتوقع"], record["رقم التليفون / الخط الساخن"]])].join(" ").toLocaleLowerCase().includes(query));
+  const remote = state.externalPharmacies.filter((pharmacy) => [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join(" ").toLocaleLowerCase().includes(query));
   const grid = document.querySelector("#pharmacy-results");
   if (!grid) return;
-  grid.innerHTML = results.length ? results.map(pharmacyCard).join("") : '<div class="panel empty-state"><strong>ملقيناش فرع بالمعلومات دي</strong>جرّب اسم منطقة أو صيدلية تاني.</div>';
-  const contactCount = results.reduce((total, group) => total + group.records.length, 0);
-  document.querySelector("#pharmacy-count").textContent = `${formatNumber(results.length)} اسم · ${formatNumber(contactCount)} بيانات تواصل`;
+  const remoteMarkup = remote.map((pharmacy) => pharmacyCard({ name: pharmacy["اسم الصيدلية"], records: [pharmacy] })).join("");
+  grid.innerHTML = results.length || remote.length ? results.map(pharmacyCard).join("") + remoteMarkup : '<div class="panel empty-state"><strong>ملقيناش صيدليات في المكان ده</strong>جرّب اسمًا أو استخدم GPS.</div>';
+  const contactCount = results.reduce((total, group) => total + group.records.length, 0) + remote.length;
+  document.querySelector("#pharmacy-count").textContent = `${formatNumber(results.length + remote.length)} نتيجة · ${formatNumber(contactCount)} بيانات تواصل`;
 }
 
 function renderPharmacies() {
   content.innerHTML = `
-    ${pageHeading("دليل الصيدليات", "ابحث باسم الصيدلية أو المنطقة، واعرض كل بيانات التواصل المدرجة.", "شبكة الفروع")}
-    <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="pharmacy-search" type="search" value="${escapeHtml(state.pharmacyQuery)}" placeholder="اسم الصيدلية، المنطقة، أو رقم الهاتف" autocomplete="off" aria-label="ابحث في دليل الصيدليات"></label><span class="toolbar-meta" id="pharmacy-count"></span></div>
+    ${pageHeading("دليل الصيدليات", "ابحث باسم الصيدلية أو أي محافظة أو مكان، أو استخدم GPS لإظهار الصيدليات القريبة من موقعك.", "شبكة الصيدليات")}
+    <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="pharmacy-search" type="search" value="${escapeHtml(state.pharmacyQuery)}" placeholder="اسم الصيدلية، المحافظة، المنطقة، أو رقم الهاتف" autocomplete="off" aria-label="ابحث في دليل الصيدليات"></label><button type="button" class="gps-directory-button" id="pharmacy-gps"><span aria-hidden="true">⌖</span> استخدم GPS للصيدليات القريبة</button><span class="toolbar-meta" id="pharmacy-count"></span></div>
     <section class="pharmacy-grid" id="pharmacy-results" aria-live="polite"></section>
-    <p class="pharmacy-disclaimer">الأرقام والمناطق من الملف المرفق، وقد تحتاج للتأكيد قبل زيارة الفرع. لا توجد بيانات موقع جغرافي أو ربط بين الفروع والمخزون في المصنف.</p>
+    <p class="pharmacy-disclaimer">النتائج تجمع بيانات الدليل مع الصيدليات القريبة من OpenStreetMap. اتصل للتأكد من الرقم والتوفر.</p>
   `;
   updatePharmacyResults();
 }
@@ -361,7 +364,7 @@ function renderConsumptionReports() {
   const estimated = rows.filter((row) => row.estimated).length;
   const top = rows[0];
   const month = new Intl.DateTimeFormat("ar-EG", { month: "long", year: "numeric" }).format(new Date());
-  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف."}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي الشرايط والعلب</span><strong>${formatNumber(total)}</strong><small>بحسب نوع الوحدة المسجل</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} ${top.unit}${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الكمية</th><th>نوع الوحدة</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td>${escapeHtml(row.unit)}</td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="6"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
+  content.innerHTML = `${pageHeading("تقارير استهلاك الأدوية", "ملخص شهري يساعد الصيدلي على متابعة حركة الأصناف واتخاذ قرار التوريد.", `تقرير ${month}`)}<div class="report-disclaimer"><strong>ملاحظة البيانات:</strong><span>${estimated === rows.length ? "ملف المصدر لا يحتوي حركات صرف شهرية فعلية؛ الأرقام المعروضة مؤشر تقديري مبني على كميات التوريد المقترحة. أضف سجل المبيعات لاحقًا للحصول على استهلاك دقيق." : "التقرير يجمع بين حركات الصرف الفعلية المتاحة والمؤشرات التقديرية للأصناف التي لا تملك سجل صرف."}</span></div><section class="report-summary-grid"><article class="report-summary-card blue"><span>إجمالي العبوات المستهلكة</span><strong>${formatNumber(total)}</strong><small>علبة، شريط، زجاجة أو غيرها حسب السجل</small></article><article class="report-summary-card orange"><span>الأكثر حركة</span><strong>${escapeHtml(top?.record?.["اسم الدواء"] || "لا توجد بيانات")}</strong><small>${top ? `${formatNumber(top.value)} ${top.unit}${top.estimated ? " تقديريًا" : ""}` : "أضف بيانات الصرف"}</small></article><article class="report-summary-card purple"><span>أصناف التقرير</span><strong>${formatNumber(rows.length)}</strong><small>${formatNumber(estimated)} تقديري · ${formatNumber(rows.length - estimated)} فعلي</small></article></section><section class="panel report-panel"><div class="panel-heading"><div><h2>الأدوية الأعلى استهلاكًا</h2><p>ترتيب تنازلي للشهر الحالي</p></div><span class="panel-kicker">${escapeHtml(month)}</span></div><div class="consumption-table-wrap"><table class="data-table"><thead><tr><th>الترتيب</th><th>اسم الدواء</th><th>الفئة</th><th>الكمية</th><th>نوع العبوة</th><th>مصدر الرقم</th></tr></thead><tbody>${rows.slice(0, 15).map((row, index) => `<tr><td><span class="rank-badge">${formatNumber(index + 1)}</span></td><td><span class="table-primary">${escapeHtml(row.record["اسم الدواء"] || "غير محدد")}</span></td><td>${escapeHtml(row.record["طبيعة الدواء"] || "صنف دوائي")}</td><td><strong class="consumption-number">${formatNumber(row.value)}</strong></td><td>${escapeHtml(row.unit)}</td><td><span class="report-source ${row.estimated ? "estimated" : "actual"}">${row.estimated ? "مؤشر تقديري" : "سجل صرف فعلي"}</span></td></tr>`).join("") || '<tr><td colspan="6"><div class="empty-state"><strong>لا توجد بيانات استهلاك بعد</strong><p>أضف حركة صرف شهرية من نظام المبيعات لبدء التقرير.</p></div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function renderDonations() {
@@ -594,6 +597,20 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("#export-button")) exportCurrentView();
   if (event.target.closest("#theme-toggle")) setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   if (event.target.closest("[data-retry]")) startApp();
+  if (event.target.closest("#pharmacy-gps")) {
+    if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
+    showToast("بنحدد موقع الصيدلية ونبحث عن القريب...");
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=15000`, { credentials: "same-origin" });
+        const payload = await response.json();
+        state.externalPharmacies = payload.pharmacies || [];
+        state.pharmacyQuery = "";
+        renderPharmacies();
+        showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية قريبة.`);
+      } catch (error) { showToast(error.message || "تعذر تحميل صيدليات GPS."); }
+    }, () => showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."), { timeout: 10000, maximumAge: 60000 });
+  }
 });
 
 document.addEventListener("input", (event) => {

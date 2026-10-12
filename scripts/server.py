@@ -70,6 +70,8 @@ def initialize_database() -> None:
                 district TEXT NOT NULL,
                 opening_hours TEXT NOT NULL,
                 whatsapp TEXT NOT NULL,
+                latitude REAL,
+                longitude REAL,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -84,6 +86,8 @@ def initialize_database() -> None:
                 medicine TEXT NOT NULL,
                 area TEXT NOT NULL,
                 quantity TEXT NOT NULL,
+                latitude REAL,
+                longitude REAL,
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'completed', 'rejected')),
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -114,6 +118,16 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN national_id TEXT NOT NULL DEFAULT ''")
         if "unit" not in columns:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN unit TEXT NOT NULL DEFAULT 'غير محددة'")
+        donation_columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)").fetchall()}
+        if "latitude" not in donation_columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN latitude REAL")
+        if "longitude" not in donation_columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN longitude REAL")
+        pharmacy_columns = {row["name"] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
+        if "latitude" not in pharmacy_columns:
+            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
+        if "longitude" not in pharmacy_columns:
+            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN longitude REAL")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -512,6 +526,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "quantity": row["quantity"],
             "unit": row["unit"],
             "nationalId": row["national_id"],
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
@@ -522,7 +538,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not self.require_role(connection, "pharmacy"):
                 return
             rows = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at "
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
                 "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
         self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
@@ -533,14 +549,21 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         quantity = str(payload.get("quantity", "")).strip()
         unit = str(payload.get("unit", "")).strip()
         national_id = re.sub(r"\D", "", str(payload.get("nationalId", "")).strip())
+        try:
+            latitude = float(payload.get("latitude")) if payload.get("latitude") not in (None, "") else None
+            longitude = float(payload.get("longitude")) if payload.get("longitude") not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValueError("بيانات GPS غير صالحة.")
+        if latitude is not None and not -90 <= latitude <= 90 or longitude is not None and not -180 <= longitude <= 180:
+            raise ValueError("بيانات GPS غير صالحة.")
         if not medicine or len(medicine) > 160:
             raise ValueError("اكتب اسم الدواء أو الكود بشكل صحيح.")
         if not area or len(area) > 160:
             raise ValueError("اكتب المنطقة بشكل صحيح.")
         if not quantity or len(quantity) > 40:
             raise ValueError("اكتب الكمية بشكل صحيح.")
-        if unit not in {"شريط", "علبة"}:
-            raise ValueError("اختار نوع الوحدة: شريط أو علبة.")
+        if unit not in {"علبة", "شريط", "شراب", "قلم", "أنبوبة مرهم", "أمبول", "بخاخ"}:
+            raise ValueError("اختار نوع العبوة من القائمة.")
         if not re.fullmatch(r"\d{14}", national_id):
             raise ValueError("الرقم القومي لازم يكون 14 رقم.")
         now = int(time.time())
@@ -556,12 +579,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 account_id = account["account_id"] if account else None
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, unit, national_id, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -572,9 +595,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             raise ValueError("حالة طلب التبرع غير صالحة.")
         now = int(time.time())
         with closing(connect_database()) as connection, connection:
-            if not self.require_role(connection, "pharmacy"):
+            pharmacy_account = self.require_role(connection, "pharmacy")
+            if not pharmacy_account:
                 return
             previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
+            pharmacy = connection.execute("SELECT pharmacy_name, address, district, whatsapp, latitude, longitude FROM pharmacy_applications WHERE account_id = ?", (pharmacy_account["id"],)).fetchone()
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -585,13 +610,24 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
                 connection.execute(
                     "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
-                    (previous["account_id"], "تم قبول تبرعك", f"وافقت الصيدلية على استلام تبرعك بدواء {previous['medicine']}. تواصل معها لتنسيق التسليم.", donation_id, now),
+                    (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
+
+    @staticmethod
+    def donation_acceptance_message(medicine: str, pharmacy: sqlite3.Row | None) -> str:
+        if not pharmacy:
+            return f"وافقت صيدلية على استلام تبرعك بدواء {medicine}. تواصل معها لتنسيق التسليم."
+        location = ""
+        if pharmacy["latitude"] is not None and pharmacy["longitude"] is not None:
+            location = f" رابط الموقع: https://www.google.com/maps?q={pharmacy['latitude']},{pharmacy['longitude']}"
+        return (f"وافقت صيدلية {pharmacy['pharmacy_name']} على استلام تبرعك بدواء {medicine}. "
+                f"العنوان: {pharmacy['address']}، {pharmacy['district']}. "
+                f"رقم التواصل: {pharmacy['whatsapp']}.{location}")
 
     def handle_saved_medicines(self) -> None:
         with closing(connect_database()) as connection:
@@ -898,13 +934,18 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             district = str(payload.get("district", "")).strip()
             opening_hours = str(payload.get("openingHours", "")).strip()
             whatsapp = str(payload.get("whatsapp", "")).strip()
+            try:
+                latitude = float(payload.get("latitude")) if payload.get("latitude") not in (None, "") else None
+                longitude = float(payload.get("longitude")) if payload.get("longitude") not in (None, "") else None
+            except (TypeError, ValueError):
+                raise ValueError("بيانات GPS للصيدلية غير صالحة.")
             if not all((pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp)):
                 raise ValueError("كمّل بيانات الصيدلية والصيدلي المسؤول والعنوان ومواعيد العمل.")
             if len(license_number) > 64 or len(pharmacy_name) > 120 or len(address) > 240:
                 raise ValueError("راجع طول بيانات الصيدلية.")
             connection.execute(
-                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp),
+                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude),
             )
         telegram_sent = notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
         message = "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة." if telegram_sent else "تم حفظ طلب الصيدلية، لكن تعذر إرسال إشعار تيليجرام. راجع إعدادات Telegram في Railway."

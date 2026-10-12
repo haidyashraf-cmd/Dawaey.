@@ -190,6 +190,8 @@ form.addEventListener("submit", async (event) => {
         address: String(formData.get("address") ?? "").trim(),
         openingHours: String(formData.get("openingHours") ?? "").trim(),
         whatsapp: String(formData.get("whatsapp") ?? "").trim(),
+        latitude: String(formData.get("pharmacyLatitude") ?? "").trim(),
+        longitude: String(formData.get("pharmacyLongitude") ?? "").trim(),
       });
     }
   }
@@ -264,5 +266,15 @@ async function initializeAuth() {
     setMessage("خدمة الحسابات مش شغالة. افتح الموقع من الخادم المحلي بعد تشغيله.");
   }
 }
+
+document.querySelector("#pharmacy-register-gps")?.addEventListener("click", () => {
+  if (!navigator.geolocation) { setMessage("المتصفح لا يدعم GPS."); return; }
+  navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+    form.elements.pharmacyLatitude.value = coords.latitude;
+    form.elements.pharmacyLongitude.value = coords.longitude;
+    try { const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`); const payload = await response.json(); if (payload.area) form.elements.pharmacyDistrict.value = payload.area; } catch { /* coordinates are still saved */ }
+    setMessage("تم تحديد موقع الصيدلية بالـ GPS.", "success");
+  }, () => setMessage("الموقع غير متاح؛ اكتب المنطقة يدويًا."), { timeout: 10000, maximumAge: 60000 });
+});
 
 initializeAuth();

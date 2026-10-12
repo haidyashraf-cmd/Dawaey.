@@ -489,3 +489,6 @@ body { background: var(--paper); }
 .gps-tool, .gps-directory-button { font-weight:800; }
 .gps-directory-button { display:inline-flex; align-items:center; gap:6px; margin-top:9px; padding:8px 10px; border:1px solid var(--teal); border-radius:6px; background:var(--teal-pale); color:var(--teal-deep); cursor:pointer; font-size:10px; }
 .gps-directory-button:hover { background:var(--teal); color:#fff; }
+
+.donation-medicines { display:grid; gap:8px; }.donation-medicine-row { display:grid; grid-template-columns: minmax(0,1fr) 90px 120px 30px; gap:7px; align-items:end; }.donation-medicine-row label { min-width:0; }.remove-donation-medicine { height:42px; border:1px solid var(--line); border-radius:8px; background:var(--danger-pale); color:var(--danger); cursor:pointer; }.secondary-button { width:max-content; padding:7px 10px; border:1px solid var(--teal); border-radius:8px; background:var(--teal-pale); color:var(--teal-deep); cursor:pointer; font-size:10px; font-weight:800; }.donation-gps-button { width:100%; justify-content:center; margin-top:0; }.main-nav a[href="#dawaey-assistant"]:hover { color:var(--teal-deep); }
+@media (max-width:680px){.donation-medicine-row{grid-template-columns:1fr 1fr 1fr 30px}.donation-medicine-row label:first-child{grid-column:1/-1}.donation-medicine-row label{font-size:9px}}

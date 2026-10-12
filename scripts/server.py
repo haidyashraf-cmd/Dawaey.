@@ -839,8 +839,18 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
                 print(f"Overpass provider failed: {error}", file=sys.stderr)
         if payload is None:
-            self.send_json(503, {"error": "خدمة دليل GPS غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
-            return
+            # Nominatim is slower and returns fewer records, but keeps the search
+            # useful when public Overpass instances are busy or unavailable.
+            fallback_query = urllib.parse.quote(f"pharmacy {area or 'Egypt'} Egypt")
+            fallback_url = f"https://nominatim.openstreetmap.org/search?format=jsonv2&limit=50&countrycodes=eg&addressdetails=1&accept-language=ar,en&q={fallback_query}"
+            try:
+                with urlopen(Request(fallback_url, headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"}), timeout=20) as response:
+                    fallback_places = json.loads(response.read().decode("utf-8"))
+                payload = {"elements": [{"tags": {"name": place.get("name") or "صيدلية قريبة", "display_name": place.get("display_name", ""), "addr:street": place.get("display_name", ""), "phone": (place.get("extratags") or {}).get("phone", "")}, "lat": place.get("lat"), "lon": place.get("lon")} for place in fallback_places]}
+            except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                print(f"Nominatim pharmacy fallback failed: {error}", file=sys.stderr)
+                self.send_json(503, {"error": "خدمة دليل الصيدليات غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
+                return
         pharmacies = []
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}

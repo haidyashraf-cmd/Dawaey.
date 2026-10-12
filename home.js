@@ -610,7 +610,7 @@ function setupEvents() {
       try {
         const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });
         const areaPayload = await areaResponse.json().catch(() => ({}));
-        const area = areaPayload.area || "بالقرب من موقعك";
+        const area = areaPayload.area || areaPayload.city || areaPayload.governorate || "بالقرب من موقعك";
         state.areaQuery = area;
         document.querySelector("#area-search").value = area;
         await loadExternalPharmacies(area, { latitude: coords.latitude, longitude: coords.longitude });
@@ -711,11 +711,13 @@ function setupAccountMenu() {
   const trigger = document.querySelector("#account-trigger");
   const menu = document.querySelector("#account-menu");
   const logout = document.querySelector("#account-logout");
+  const menuName = document.querySelector("#account-menu-name");
   if (!loginLink || !wrap || !trigger || !menu) return;
   if (state.user?.role !== "patient") return;
   loginLink.hidden = true;
   wrap.hidden = false;
   trigger.textContent = state.user.name || "حسابي";
+  if (menuName) menuName.textContent = state.user.name || "حساب المريض";
   trigger.setAttribute("aria-label", `فتح قائمة حساب ${state.user.name || "المريض"}`);
   trigger.addEventListener("click", () => { const open = menu.hidden; menu.hidden = !open; trigger.setAttribute("aria-expanded", String(open)); });
   logout?.addEventListener("click", async () => {

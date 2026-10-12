@@ -797,13 +797,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 return
             latitude, longitude = float(places[0]["lat"]), float(places[0]["lon"])
         try:
-            radius = min(max(int(float(parameters.get("radius", ["10000"])[0])), 1000), 25000)
+            radius = min(max(int(float(parameters.get("radius", ["15000"])[0])), 1000), 25000)
         except ValueError:
             radius = 10000
         overpass_query = f"[out:json][timeout:18];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
         request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
         payload = None
-        for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
+        for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
             try:
                 request.full_url = endpoint
                 with urlopen(request, timeout=24) as response:
@@ -849,7 +849,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "format": "jsonv2",
             "zoom": 14,
             "addressdetails": 1,
-            "accept-language": "ar",
+            "namedetails": 1,
+            "accept-language": "ar,en",
         })
         request = Request(
             f"https://nominatim.openstreetmap.org/reverse?{query}",
@@ -863,11 +864,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
 
         address = place.get("address", {})
-        area = next((address.get(key) for key in ("neighbourhood", "suburb", "city_district", "district", "town", "village", "hamlet") if address.get(key)), None)
+        # Prefer the most useful local area, then fall back to city/governorate.
+        area = next((address.get(key) for key in ("neighbourhood", "suburb", "city_district", "district", "town", "village", "hamlet", "city", "municipality", "county", "state") if address.get(key)), None)
+        governorate = address.get("state") or address.get("state_district") or address.get("county") or ""
+        city = address.get("city") or address.get("town") or address.get("municipality") or address.get("village") or ""
         if not area:
             self.send_json(404, {"error": "ما قدرناش نحدد اسم المنطقة من موقعك."})
             return
-        self.send_json(200, {"area": str(area), "attribution": "OpenStreetMap contributors"})
+        self.send_json(200, {"area": str(area), "city": str(city), "governorate": str(governorate), "displayName": place.get("display_name", str(area)), "latitude": latitude, "longitude": longitude, "attribution": "OpenStreetMap contributors"})
 
     def handle_whatsapp_verification(self) -> None:
         parameters = parse_qs(urlsplit(self.path).query)

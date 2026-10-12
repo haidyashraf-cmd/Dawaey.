@@ -480,9 +480,9 @@ body { background: var(--paper); }
 .assistant-section { display: block; }
 
 .account-menu-wrap { position:relative; }
-.account-trigger { min-height:40px; padding:0 16px; border:1px solid var(--teal-deep); border-radius:4px; background:var(--surface); color:var(--teal-deep); cursor:pointer; font-size:11px; font-weight:800; }
-.account-trigger:hover { background:var(--teal-deep); color:#fff; }
-.account-menu { position:absolute; z-index:30; top:calc(100% + 10px); inset-inline-end:0; display:grid; min-width:190px; padding:7px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:var(--shadow); }
+.account-trigger { min-width:74px; min-height:40px; padding:0 16px; border:1px solid #607d8b; border-radius:5px; background:var(--surface); color:#34495e; cursor:pointer; font-size:11px; font-weight:800; }
+.account-trigger:hover, .account-trigger[aria-expanded="true"] { background:#f4f8fa; color:#34495e; }
+.account-menu { position:absolute; z-index:30; top:calc(100% + 8px); inset-inline-end:0; display:grid; min-width:190px; padding:8px; border:1px solid #d7e1e6; border-radius:6px; background:#fff; box-shadow:0 12px 30px rgba(31,55,74,.16); }
 .account-menu a, .account-menu button { display:block; width:100%; padding:10px 12px; border:0; border-radius:6px; background:transparent; color:var(--ink); cursor:pointer; font:inherit; font-size:11px; text-align:right; text-decoration:none; }
 .account-menu a:hover, .account-menu button:hover { background:var(--surface-soft); color:var(--teal-deep); }
 .account-menu button { color:var(--danger); }

@@ -179,7 +179,7 @@ function nearbyPharmacyMarkup(record) {
 }
 
 async function loadExternalPharmacies(area = "", coords = null) {
-  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}` : `area=${encodeURIComponent(area)}`;
+  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=25000` : `area=${encodeURIComponent(area)}&radius=25000`;
   try {
     const response = await fetch(`/api/nearby-pharmacies?${parameters}`, { credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
@@ -203,7 +203,7 @@ function renderAreaResults(query = "") {
     return;
   }
   if (!entries.length) {
-    container.innerHTML = `<div class="area-result"><span>${query ? "مفيش صيدليات في المكان ده" : "اكتب اسم المنطقة لعرض الصيدليات القريبة"}</span></div>`;
+    container.innerHTML = `<div class="area-result"><span>${query ? "لم نجد صيدليات في النطاق الحالي؛ جرّب مكانًا أقرب أو GPS" : "اكتب اسم المنطقة لعرض الصيدليات القريبة"}</span></div>`;
     return;
   }
   container.innerHTML = entries.map((pharmacy) => {
@@ -375,7 +375,7 @@ function setupTabs() {
       item.setAttribute("aria-selected", String(active));
     });
     const pharmacyContent = `<div class="audience-symbol">✚</div><div><h3>إدارة أوضح للمخزون</h3><p>مساحة مخصصة للصيدلية لمتابعة الأصناف والطلبات، بعد ربط النظام ببيانات الفرع ومراجعته.</p><ul><li>عرض حالة المخزون حسب حدود الفرع</li><li>استقبال طلبات التحويل بين الصيدليات</li><li>توثيق الحساب قبل النشر</li></ul></div>`;
-    const patientContent = `<div class="audience-symbol">💚</div><div><h3>معلومة أوضح قبل المشوار</h3><p>ابحث في الأصناف، احتفظ بأدويتك على جهازك، وتواصل مع الفروع المدرجة بدون ما نخلط بين دليل الفروع وسجل المخزون.</p><ul><li>بحث بالاسم والكود والفئة</li><li>حفظ محلي للأدوية اللي تهمك</li><li>إظهار حدود البيانات بوضوح</li></ul></div>`;
+    const patientContent = `<div class="audience-symbol">💚</div><div><h3>معلومة أوضح قبل المشوار</h3><p>ابحث في الأصناف، احتفظ بأدويتك على جهازك، وتواصل مع الصيدليات القريبة بدون ما نخلط بين دليل الصيدليات وسجل المخزون.</p><ul><li>بحث بالاسم والكود والفئة</li><li>حفظ محلي للأدوية اللي تهمك</li><li>إظهار حدود البيانات بوضوح</li></ul></div>`;
     panel.setAttribute("aria-labelledby", patient ? "patient-tab" : "pharmacy-tab");
     panel.innerHTML = patient ? patientContent : pharmacyContent;
   }));
@@ -539,8 +539,8 @@ function setupDonationAndAssistant() {
       try {
         const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
         const payload = await response.json();
-        document.querySelector("#donation-area").value = payload.area || "بالقرب من موقعك";
-        showToast("تم تحديد مكان التبرع بالـ GPS.");
+        document.querySelector("#donation-area").value = payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
+        showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
       } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
     }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { timeout: 10000, maximumAge: 60000 });
   });

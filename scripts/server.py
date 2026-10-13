@@ -186,7 +186,7 @@ def password_digest(password: str, salt: bytes) -> bytes:
 def external_json_request(url: str, payload: dict, headers: dict | None = None) -> dict:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(url, data=body, headers={"Content-Type": "application/json", **(headers or {})}, method="POST")
-    with urlopen(request, timeout=12) as response:
+    with urlopen(request, timeout=6) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -1068,7 +1068,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             return
         overpass_query = f"[out:json][timeout:15];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
         payload = None
-        endpoints = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter")
+        endpoints = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter")
         for endpoint in endpoints:
             try:
                 request = Request(endpoint, data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
@@ -1083,11 +1083,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 print(f"Overpass provider failed ({endpoint}): {error}", file=sys.stderr)
         if payload is None or not payload.get("elements"):
             wide_radius = min(max(radius * 2, 16000), 22000)
-            wide_query = f"[out:json][timeout:20];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
+            wide_query = f"[out:json][timeout:10];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
             for endpoint in endpoints:
                 try:
                     wide_request = Request(endpoint, data=urllib.parse.urlencode({"data": wide_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
-                    with urlopen(wide_request, timeout=20) as response:
+                    with urlopen(wide_request, timeout=7) as response:
                         candidate = json.loads(response.read().decode("utf-8"))
                     if candidate.get("elements"):
                         payload = candidate

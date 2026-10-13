@@ -704,8 +704,11 @@ function setupEvents() {
     if (event.target.files?.length) searchFromPhoto(event.target.files[0]);
     event.target.value = "";
   });
-  const useGps = () => {
+  const useGps = (event) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (!navigator.geolocation) { showToast("المتصفح مش بيدعم تحديد الموقع"); return; }
+    document.querySelector(".search-workspace .map-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
     const mapWindow = window.open("about:blank", "dawaey-nearby-map");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {

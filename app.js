@@ -645,7 +645,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-retry]")) startApp();
   if (event.target.closest("#pharmacy-gps")) {
     if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
-    const mapWindow = window.open("about:blank", "dawaey-pharmacy-nearby-map");
+    const mapWindow = window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
@@ -659,8 +659,8 @@ document.addEventListener("click", (event) => {
         state.pharmacyQuery = "";
         renderPharmacies();
         showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية مسماة قريبة.`);
-      } catch (error) { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast(error.message || "تعذر تحميل صيدليات GPS."); }
-    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."); }, { enableHighAccuracy: true, timeout: 7000, maximumAge: 300000 });
+      } catch (error) { showToast(error.message || "تعذر تحميل صيدليات GPS."); }
+    }, () => { showToast("الموقع غير متاح؛ الخريطة العامة ما زالت مفتوحة."); }, { enableHighAccuracy: true, timeout: 7000, maximumAge: 300000 });
   }
 });
 

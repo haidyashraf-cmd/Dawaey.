@@ -364,6 +364,10 @@ async function loadPatientData() {
   if (notificationsResponse.ok) {
     const notificationPayload = await notificationsResponse.json();
     state.notifications = notificationPayload.notifications || [];
+    try {
+      const readIds = new Set(JSON.parse(localStorage.getItem(`dawaey-read-notifications:${state.user?.id}`) || "[]").map(String));
+      state.notifications = state.notifications.map((item) => readIds.has(String(item.id)) ? { ...item, isRead: true } : item);
+    } catch { /* حالة القراءة محفوظة على الخادم */ }
   }
   if (donationsResponse.ok) {
     const donationPayload = await donationsResponse.json();
@@ -819,7 +823,7 @@ function setupEvents() {
     event?.stopPropagation();
     if (!navigator.geolocation) { showToast("المتصفح مش بيدعم تحديد الموقع"); return; }
     document.querySelector(".search-workspace .map-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    const patientMapWindow = window.open("about:blank", "dawaey-patient-nearby-map");
+    const patientMapWindow = window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       const patientMapUrl = `https://www.google.com/maps/@${coords.latitude},${coords.longitude},15z`;
@@ -831,7 +835,6 @@ function setupEvents() {
         state.areaQuery = area;
         state.areaFromGps = true;
         state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        document.querySelector("#area-search").value = area;
         const mapPanel = document.querySelector(".search-workspace .map-panel");
         if (mapPanel) {
           mapPanel.dataset.latitude = String(coords.latitude);
@@ -860,7 +863,7 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     const button = document.querySelector("#patient-notifications");
     const opening = panel?.hasAttribute("hidden");
-    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
+    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }).catch(() => {}); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); try { localStorage.setItem(`dawaey-read-notifications:${state.user?.id}`, JSON.stringify(state.notifications.map((item) => item.id))); } catch {} renderNotifications(); } }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
   document.addEventListener("click", async (event) => {

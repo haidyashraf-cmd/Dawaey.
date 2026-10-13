@@ -826,7 +826,7 @@ function setupEvents() {
     const patientMapWindow = window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      const patientMapUrl = `https://www.google.com/maps/@${coords.latitude},${coords.longitude},15z`;
+      const patientMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacy near ${coords.latitude},${coords.longitude}`)}`;
       if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.replace(patientMapUrl);
       try {
         const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });

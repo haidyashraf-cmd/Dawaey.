@@ -782,7 +782,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if unit not in {"علبة", "شريط", "شراب", "قلم", "أنبوبة مرهم", "أمبول", "بخاخ"}:
             raise ValueError("اختار نوع العبوة من القائمة.")
         image_data = str(payload.get("imageData", "")).strip()
-        if image_data and (len(image_data) > 4_000_000 or not re.fullmatch(r"data:image/(?:jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+", image_data)):
+        if image_data and (len(image_data) > 12_000_000 or not re.fullmatch(r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+", image_data)):
             raise ValueError("صورة التبرع غير صالحة أو حجمها كبير.")
         if not valid_egyptian_national_id(national_id):
             raise ValueError("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3.")

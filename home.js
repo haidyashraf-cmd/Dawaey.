@@ -15,19 +15,7 @@ function readDonationImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onerror = () => resolve("");
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => resolve("");
-      image.onload = () => {
-        const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", .78));
-      };
-      image.src = String(reader.result || "");
-    };
+    reader.onload = () => resolve(String(reader.result || ""));
     reader.readAsDataURL(file);
   });
 }

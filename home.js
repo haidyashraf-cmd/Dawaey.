@@ -227,10 +227,13 @@ function renderAreaResults(query = "") {
     container.innerHTML = `<div class="area-result"><span>${query ? "لم نجد صيدليات في النطاق الحالي؛ جرّب مكانًا أقرب أو GPS" : "اكتب اسم المنطقة لعرض الصيدليات القريبة"}</span></div>`;
     return;
   }
-  container.innerHTML = entries.map((pharmacy) => {
+  container.innerHTML = `<div class="area-results-summary"><strong>وجدنا ${numberFormat.format(entries.length)} صيدلية قريبة</strong><span>النتائج مرتبة حسب المنطقة</span></div>` + entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="area-result"><span>${escapeHtml(pharmacy["اسم الصيدلية"])}<br><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
+    const lat = Number(pharmacy.lat);
+    const lon = Number(pharmacy.lon);
+    const mapUrl = Number.isFinite(lat) && Number.isFinite(lon) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}` : "";
+    return `<article class="area-result"><span class="area-result-icon" aria-hidden="true">✚</span><div class="area-result-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"] || "صيدلية قريبة")}</strong><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"] || "العنوان غير مدرج")}</small><em>${pharmacy.source === "OpenStreetMap" ? "من الخريطة" : "من دليل دوائي"}</em></div><div class="area-result-actions">${dial ? `<a class="area-call" href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span class="area-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}${mapUrl ? `<a class="area-map" href="${mapUrl}" target="_blank" rel="noopener">الخريطة</a>` : ""}</div></article>`;
   }).join("");
 }
 

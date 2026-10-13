@@ -426,3 +426,13 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 [data-theme="dark"] .data-table tbody tr:hover { background:#223c43 !important; }
 [data-theme="dark"] .stock-health-card, [data-theme="dark"] .stock-alert-item { background:#1a2935 !important; border-color:#39515d !important; }
 [data-theme="dark"] .panel-note, [data-theme="dark"] .report-disclaimer, [data-theme="dark"] .donation-dashboard-note { background:#283b42 !important; color:#c6d8d8 !important; }
+
+/* Mobile parity: all dashboard views remain reachable through the bottom navigation. */
+@media (max-width: 760px) {
+  body { overflow-x: hidden; padding-bottom: 74px; }
+  .main-content { padding-bottom: 82px; }
+  .mobile-nav { grid-template-columns: repeat(7, minmax(58px, 1fr)) !important; overflow-x: auto; justify-content: start; }
+  .mobile-nav-item { min-width: 58px; }
+  .topbar-actions { flex-wrap: wrap; }
+  .table-wrap, .consumption-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

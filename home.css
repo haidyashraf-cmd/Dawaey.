@@ -907,3 +907,21 @@ body { background: var(--paper); color: var(--ink); }
 [data-theme="dark"] .area-search input, [data-theme="dark"] .assistant-form input { background:#172a31 !important; border-color:#4d7075 !important; color:#effaf5 !important; }
 [data-theme="dark"] .medicine-meta span { background:#315158 !important; border-color:#4d7075 !important; color:#d8ebe5 !important; }
 [data-theme="dark"] .medicine-result-caption span:last-child, [data-theme="dark"] .nearby-heading > span, [data-theme="dark"] .nearby-caveat { color:#bdd0cf !important; }
+
+/* Mobile parity: keep every patient section and header action reachable like desktop. */
+@media (max-width: 900px) {
+  body { overflow-x: hidden; }
+  .site-header .wrap { flex-wrap: wrap; row-gap: 8px; }
+  .main-nav { order: 3; width: 100%; justify-content: flex-start; overflow-x: auto; padding: 2px 0 7px; scrollbar-width: thin; }
+  .main-nav a { flex: 0 0 auto; white-space: nowrap; }
+  .header-actions { flex-wrap: wrap; margin-inline-start: auto; }
+  .search-workspace, .audience-section, .medicine-info-section, .saved-section, .donation-section, .donations-history-section, .assistant-section { scroll-margin-top: 110px; }
+}
+@media (max-width: 620px) {
+  .site-header .wrap { padding-inline: 12px; }
+  .brand { flex: 0 0 auto; }
+  .header-actions { gap: 6px !important; }
+  .header-emergency { min-width: 34px; padding-inline: 7px; }
+  .header-emergency b { display: none; }
+  .login-link { max-width: 120px; overflow: hidden; padding-inline: 8px; text-overflow: ellipsis; white-space: nowrap; }
+}

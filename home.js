@@ -144,9 +144,9 @@ function renderMedicineCard(record) {
   const nearby = nearbyPharmacyMarkup(record);
   return `<article class="medicine-result">
     <span class="medicine-glyph" aria-hidden="true"><i></i><b>Rx</b></span>
-    <div class="medicine-main"><div class="medicine-title-row"><div><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
-      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
-      <button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button>
+    <div class="medicine-main"><div class="medicine-title-row"><div><span class="medicine-kicker">نتيجة من سجل دوائي</span><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
+      <div class="medicine-meta"><span><b>الكود</b>${escapeHtml(record["الكود"] || "—")}</span><span><b>الكمية</b>${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span><b>حد الطلب</b>${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span><b>المادة الفعالة</b>${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
+      <div class="medicine-card-footer"><button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button><span>اضغط على البطاقة لعرض التفاصيل</span></div>
     </div>
     ${nearby}
   </article>`;

@@ -381,7 +381,42 @@ def uploaded_json_value(value):
 
 
 def clean_uploaded_rows(rows):
-    return [{str(key).strip(): uploaded_json_value(value) for key, value in row.items() if str(key).strip()} for row in rows[:10000] if isinstance(row, dict)]
+    aliases = {
+        "اسم الصنف": "اسم الدواء", "الصنف": "اسم الدواء", "الدواء": "اسم الدواء", "اسم المنتج": "اسم الدواء",
+        "رقم الصنف": "الكود", "كود الصنف": "الكود", "رقم الصنف/الكود": "الكود",
+        "الفئة": "طبيعة الدواء", "التصنيف": "طبيعة الدواء", "نوع الدواء": "طبيعة الدواء",
+        "الوحدة": "وحدة القياس", "نوع العبوة": "وحدة القياس", "العبوة": "وحدة القياس",
+        "الكمية": "الكمية الحالية", "الرصيد": "الكمية الحالية", "الكمية المتاحة": "الكمية الحالية",
+        "حد الطلب": "الحد الأدنى", "الحد الادنى": "الحد الأدنى", "الحد الأدنى للمخزون": "الحد الأدنى",
+        "توريد مقترح": "كمية التوريد المقترحة", "الكمية المطلوبة": "كمية التوريد المقترحة",
+        "الحالة": "حالة المخزون", "حالة الصنف": "حالة المخزون",
+        "اسم الفرع": "اسم الصيدلية", "اسم الصيدليه": "اسم الصيدلية",
+        "العنوان": "المنطقة / العنوان المتوقع", "المنطقة": "المنطقة / العنوان المتوقع",
+        "الهاتف": "رقم التليفون / الخط الساخن", "رقم الهاتف": "رقم التليفون / الخط الساخن", "التليفون": "رقم التليفون / الخط الساخن",
+    }
+    clean=[]
+    for row in rows[:10000]:
+        if not isinstance(row, dict): continue
+        normalized={}
+        for key,value in row.items():
+            key=str(key).strip()
+            if not key: continue
+            normalized[key]=uploaded_json_value(value)
+            canonical=aliases.get(key)
+            if canonical and not normalized.get(canonical): normalized[canonical]=uploaded_json_value(value)
+        if any(value != "" for value in normalized.values()): clean.append(normalized)
+    return clean
+
+
+def find_header_row(values):
+    keywords=("اسم الدواء","اسم الصنف","الصنف","الدواء","الكمية","الرصيد","الكود","اسم الصيدلية","الهاتف","التليفون")
+    best_index=0; best_score=-1
+    for index,row in enumerate(values[:15]):
+        cells=[str(value).strip() for value in row if value is not None and str(value).strip()]
+        score=sum(1 for cell in cells for keyword in keywords if keyword in cell)
+        if score > best_score or (score == best_score and len(cells)>0 and len(cells)>len(values[best_index])):
+            best_index=index; best_score=score
+    return best_index
 
 
 def classify_uploaded_sheet(name, rows):
@@ -406,9 +441,10 @@ def parse_uploaded_rows(content, filename):
             values = list(sheet.iter_rows(values_only=True))
             if not values:
                 continue
-            headers = [str(value).strip() if value is not None else "" for value in values[0]]
+            header_index = find_header_row(values)
+            headers = [str(value).strip() if value is not None else "" for value in values[header_index]]
             rows = []
-            for values_row in values[1:]:
+            for values_row in values[header_index + 1:]:
                 row = {headers[index]: uploaded_json_value(value) for index, value in enumerate(values_row) if index < len(headers) and headers[index]}
                 if any(value != "" for value in row.values()):
                     rows.append(row)
@@ -436,8 +472,8 @@ def parse_uploaded_rows(content, filename):
         parsed = {classify_uploaded_sheet(name, rows): clean_uploaded_rows(rows) for name, rows in sheets.items() if isinstance(rows, list)}
     else:
         raise ValueError("ارفع ملف Excel بصيغة XLSX أو ملف CSV أو JSON.")
-    if not parsed:
-        raise ValueError("الملف لا يحتوي على جداول بيانات.")
+    if not parsed or not any(parsed.values()):
+        raise ValueError("لم نقرأ أي أصناف من الملف. تأكد أن الصف الأول يحتوي أسماء الأعمدة وأن الملف يحتوي بيانات.")
     return {"inventory": parsed.get("inventory", []), "supply": parsed.get("supply", []), "pharmacies": parsed.get("pharmacies", [])}
 
 

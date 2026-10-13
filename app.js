@@ -509,7 +509,8 @@ async function uploadPharmacyData(file) {
   if (!response.ok) throw new Error(payload.error || "تعذر رفع ملف الصيدلية.");
   state.data = await loadDashboardData();
   showView(state.view, false);
-  showToast(`تم رفع ${payload.filename}؛ بيانات صيدليتك أصبحت منفصلة.`);
+  const counts = payload.counts || {};
+  showToast(`تم رفع الملف: ${payload.filename} · أصناف: ${counts.inventory || 0} · توريدات: ${counts.supply || 0}`);
 }
 
 async function startApp() {

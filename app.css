@@ -1,3 +1,6 @@
 
 .pharmacy-map-link { display: inline-block; margin-top: 3px; color: var(--teal-deep, #007f78); font-size: 10px; font-weight: 800; text-decoration: none; }
 .pharmacy-map-link:hover { text-decoration: underline; }
+
+.pharmacy-gps-button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 0 11px; border: 1px solid rgba(21,102,116,.22); border-radius: 999px; background: var(--surface, #fff); color: var(--teal-deep, #087d78); font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.pharmacy-gps-button:hover { background: var(--blue-pale, #edf8fa); }

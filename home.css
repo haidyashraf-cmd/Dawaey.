@@ -938,3 +938,53 @@ body { background: var(--paper); color: var(--ink); }
 [data-theme="dark"] .assistant-message.assistant { background: #285149 !important; color: #effaf7 !important; }
 [data-theme="dark"] .assistant-message.user { background: #315776 !important; color: #fff !important; }
 [data-theme="dark"] .site-footer, [data-theme="dark"] .faq-section { background: #0c202a !important; }
+
+/* Final visual polish: readable dark mode, full-width results, and clear map state. */
+.search-workspace > .wrap { width: min(100% - 32px, 1180px); max-width: 1180px; }
+.search-workspace .results-split { grid-template-columns: minmax(0, 1.45fr) minmax(320px, .8fr); gap: 24px; }
+.search-workspace .result-list { min-width: 0; }
+.search-workspace .medicine-result { min-height: 168px; background: #f3f7f5; border-color: #c6d9d2; box-shadow: 0 10px 24px rgba(35, 76, 69, .10); }
+.search-workspace .medicine-result:nth-child(3n+2) { background: #f1f4fb; border-right-color: #536fc9; }
+.search-workspace .medicine-result:nth-child(3n+3) { background: #fbf5e9; border-right-color: #bf8730; }
+.search-workspace .medicine-title-row h3, .search-workspace .nearby-heading strong, .search-workspace .nearby-pharmacy-copy strong { color: #183b45; }
+.search-workspace .medicine-title-row p, .search-workspace .nearby-pharmacy-copy small, .search-workspace .medicine-card-footer > span { color: #526b70; }
+.search-workspace .medicine-meta span { background: rgba(255,255,255,.68); border-color: #cbded7; color: #34575d; }
+.search-workspace .map-panel { min-width: 0; background: #eef4f1 !important; border-color: #b9d0c7 !important; }
+.search-workspace .map-panel-head { background: #dceae4 !important; }
+.search-workspace .area-result { background: #f7faf8 !important; color: #183b45 !important; }
+.search-workspace .area-result:hover { background: #e7f2ed !important; }
+.search-workspace .map-panel.has-user-location .directory-overview { border-color: #4b9f8b !important; background: #dcefe8 !important; }
+.search-workspace .map-panel.has-user-location .directory-overview::after { content: "تم تحديد موقعك على الخريطة"; display: block; margin-top: 6px; color: #176d5f; font-size: 8px; font-weight: 800; }
+
+[data-theme="dark"] body { background: #172527 !important; color: #eaf3ef !important; }
+[data-theme="dark"] .search-workspace { background: linear-gradient(180deg, #1a2b2d 0%, #203436 100%) !important; }
+[data-theme="dark"] .search-workspace .compact-heading h2,
+[data-theme="dark"] .search-workspace .medicine-title-row h3,
+[data-theme="dark"] .search-workspace .nearby-heading strong,
+[data-theme="dark"] .search-workspace .nearby-pharmacy-copy strong,
+[data-theme="dark"] .search-workspace .map-panel-head h3 { color: #f0f7f3 !important; }
+[data-theme="dark"] .search-workspace .compact-heading p,
+[data-theme="dark"] .search-workspace .medicine-title-row p,
+[data-theme="dark"] .search-workspace .nearby-pharmacy-copy small,
+[data-theme="dark"] .search-workspace .medicine-card-footer > span,
+[data-theme="dark"] .search-workspace .area-privacy-note { color: #b8cbc5 !important; }
+[data-theme="dark"] .search-workspace .medicine-result { background: #294143 !important; border-color: #426364 !important; box-shadow: 0 12px 28px rgba(0,0,0,.20); }
+[data-theme="dark"] .search-workspace .medicine-result:nth-child(3n+2) { background: #2b3f52 !important; border-right-color: #82a4ed !important; }
+[data-theme="dark"] .search-workspace .medicine-result:nth-child(3n+3) { background: #4a4030 !important; border-right-color: #e0b761 !important; }
+[data-theme="dark"] .search-workspace .medicine-meta span,
+[data-theme="dark"] .search-workspace .nearby-pharmacy { background: rgba(11,28,30,.28) !important; border-color: #557373 !important; color: #e4f0eb !important; }
+[data-theme="dark"] .search-workspace .medicine-meta span b { color: #b2c7c1 !important; }
+[data-theme="dark"] .search-workspace .map-panel { background: #263c3e !important; border-color: #557574 !important; }
+[data-theme="dark"] .search-workspace .map-panel-head { background: #304b4c !important; border-color: #557574 !important; }
+[data-theme="dark"] .search-workspace .directory-overview { background: #315354 !important; border-color: #5d8a83 !important; }
+[data-theme="dark"] .search-workspace .area-search input { background: #172c2e !important; border-color: #648785 !important; color: #f0f7f3 !important; }
+[data-theme="dark"] .search-workspace .area-result { background: #304b4c !important; border-color: #557574 !important; color: #eff8f3 !important; }
+[data-theme="dark"] .search-workspace .area-result a { color: #8cdec4 !important; }
+[data-theme="dark"] .search-workspace .map-panel.has-user-location .directory-overview::after { color: #a7ead4 !important; }
+
+@media (max-width: 820px) {
+  .search-workspace > .wrap { width: min(100% - 22px, 680px); }
+  .search-workspace .results-split { grid-template-columns: 1fr; gap: 14px; }
+  .search-workspace .map-panel { position: relative !important; top: auto !important; order: -1; }
+  .search-workspace .medicine-result { min-height: 0; }
+}

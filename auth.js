@@ -253,6 +253,18 @@ document.querySelector(".password-toggle").addEventListener("click", (event) => 
   event.currentTarget.setAttribute("aria-label", input.type === "password" ? "إظهار كلمة المرور" : "إخفاء كلمة المرور");
 });
 
+function bindPasswordToggle(selector, fieldName, label) {
+  document.querySelector(selector)?.addEventListener("click", (event) => {
+    const input = form.elements[fieldName];
+    if (!input) return;
+    const visible = input.type === "password";
+    input.type = visible ? "text" : "password";
+    event.currentTarget.textContent = visible ? "إخفاء" : "إظهار";
+    event.currentTarget.setAttribute("aria-label", `${visible ? "إخفاء" : "إظهار"} ${label}`);
+  });
+}
+bindPasswordToggle(".password-confirm-toggle", "passwordConfirm", "تأكيد كلمة المرور");
+
 document.addEventListener("click", async (event) => {
   if (event.target.closest("#back-to-login")) restoreForm();
   if (!event.target.closest("#logout-button")) return;

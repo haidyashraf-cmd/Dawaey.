@@ -34,7 +34,16 @@ OAUTH_STATE_SECONDS = 600
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
 def valid_egyptian_national_id(value: str) -> bool:
-    return bool(re.fullmatch(r"[23]\d{13}", value))
+    if not re.fullmatch(r"[23]\d{13}", value):
+        return False
+    century = 1900 if value[0] == "2" else 2000
+    year, month, day = century + int(value[1:3]), int(value[3:5]), int(value[5:7])
+    try:
+        import datetime
+        datetime.date(year, month, day)
+    except (ValueError, OverflowError):
+        return False
+    return True
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
@@ -140,6 +149,8 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN longitude REAL")
         if "image_data" not in donation_columns:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN image_data TEXT NOT NULL DEFAULT ''")
+        if "donor_name" not in donation_columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN donor_name TEXT NOT NULL DEFAULT ''")
         pharmacy_columns = {row["name"] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
         if "latitude" not in pharmacy_columns:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
@@ -722,6 +733,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         return {
             "id": row["id"],
             "medicine": row["medicine"],
+            "donorName": row["donor_name"] if "donor_name" in row.keys() else "",
             "area": row["area"],
             "quantity": row["quantity"],
             "unit": row["unit"],
@@ -746,12 +758,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
                     return
                 rows = connection.execute(
-                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
+                    "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
             elif account["role"] == "patient":
                 rows = connection.execute(
-                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
+                    "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests WHERE account_id = ? ORDER BY created_at DESC LIMIT 50",
                     (account["id"],),
                 ).fetchall()
@@ -790,6 +802,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
         account_id = None
+        donor_name = str(payload.get("donorName", "")).strip()[:120]
         with closing(connect_database()) as connection, connection:
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
@@ -798,13 +811,16 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (token_hash, now),
                 ).fetchone()
                 account_id = account["account_id"] if account else None
+                if account_id and not donor_name:
+                    account_row = connection.execute("SELECT full_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+                    donor_name = str(account_row["full_name"] if account_row else "").strip()[:120]
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -833,7 +849,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, pharmacy["pharmacy_name"], pharmacy["whatsapp"], f"{pharmacy['address']}، {pharmacy['district']}", pharmacy["location_url"] or (f"https://www.google.com/maps?q={pharmacy['latitude']},{pharmacy['longitude']}" if pharmacy["latitude"] is not None and pharmacy["longitude"] is not None else ""), now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
@@ -1088,7 +1104,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             try:
                 with urlopen(Request(fallback_url, headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"}), timeout=20) as response:
                     fallback_places = json.loads(response.read().decode("utf-8"))
-                payload = {"elements": [{"tags": {"name": place.get("name") or "صيدلية قريبة", "display_name": place.get("display_name", ""), "addr:street": place.get("display_name", ""), "phone": (place.get("extratags") or {}).get("phone", "")}, "lat": place.get("lat"), "lon": place.get("lon")} for place in fallback_places]}
+                payload = {"elements": [{"tags": {"name": place.get("name") or "", "display_name": place.get("display_name", ""), "addr:street": place.get("display_name", ""), "phone": (place.get("extratags") or {}).get("phone", "")}, "lat": place.get("lat"), "lon": place.get("lon")} for place in fallback_places]}
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
                 print(f"Nominatim pharmacy fallback failed: {error}", file=sys.stderr)
                 self.send_json(503, {"error": "خدمة دليل الصيدليات غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
@@ -1097,7 +1113,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         pharmacies = []
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}
-            name = tags.get("name:ar") or tags.get("name") or "صيدلية قريبة"
+            name = (tags.get("name:ar") or tags.get("name") or "").strip()
+            if len(name) < 2:
+                continue
             address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
             phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"
             pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": phone, "source": "OpenStreetMap", "lat": item.get("lat") or (item.get("center") or {}).get("lat"), "lon": item.get("lon") or (item.get("center") or {}).get("lon")})

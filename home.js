@@ -336,16 +336,8 @@ function updateSavedList() {
 function renderAccountProfile() {
   const savedCount = document.querySelector("#account-saved-count");
   const donationCount = document.querySelector("#account-donation-count");
-  const preview = document.querySelector("#account-donation-preview");
   if (savedCount) savedCount.textContent = String(state.saved.size);
   if (donationCount) donationCount.textContent = String(state.donations.length);
-  if (!preview) return;
-  const labels = { pending: "قيد المراجعة", accepted: "تم القبول", completed: "تم التسليم", rejected: "لم يتم القبول" };
-  if (!state.donations.length) {
-    preview.innerHTML = '<span class="account-preview-title">آخر تبرعاتك</span><span class="account-preview-empty">لسه مفيش تبرعات مسجلة.</span>';
-    return;
-  }
-  preview.innerHTML = '<span class="account-preview-title">آخر تبرعاتك</span>' + state.donations.slice(0, 3).map((item) => `<a class="account-donation-row" href="#my-donations"><strong>${escapeHtml(item.medicine || "دواء غير محدد")}</strong><small>${escapeHtml(item.area || "مكان غير محدد")} · ${escapeHtml(labels[item.status] || "جديد")}</small></a>`).join("");
 }
 function renderDonationHistory() {
   const container = document.querySelector("#donation-history");

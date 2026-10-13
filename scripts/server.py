@@ -254,6 +254,9 @@ def telegram_poll_loop() -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         return
+    # The application uses polling. Clear any webhook left by an older deployment
+    # before starting getUpdates, otherwise Telegram returns a 409 conflict.
+    delete_telegram_webhook(token)
     webhook_reset = False
     while True:
         try:
@@ -650,14 +653,14 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = urlsplit(self.path).path
-        if not route.startswith("/api/") and route != "/webhooks/whatsapp":
+        if not route.startswith("/api/") and route not in {"/webhooks/whatsapp", "/webhooks/telegram"}:
             self.send_error(404)
             return
         if route.startswith("/api/") and not self.verify_origin():
             self.send_json(403, {"error": "الطلب غير مسموح."})
             return
         try:
-            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp") else {}
+            payload = self.read_json() if route in ("/api/register", "/api/login", "/api/donations", "/api/saved-medicines", "/api/notifications/read", "/webhooks/whatsapp", "/webhooks/telegram") else {}
             if route == "/api/register":
                 self.handle_register(payload)
             elif route == "/api/login":
@@ -674,6 +677,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.handle_pharmacy_upload()
             elif route == "/webhooks/whatsapp":
                 self.handle_whatsapp_webhook(payload)
+            elif route == "/webhooks/telegram":
+                self.handle_telegram_webhook(payload)
             else:
                 self.send_json(404, {"error": "المسار غير موجود."})
         except ValueError as error:
@@ -1107,6 +1112,29 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     if status:
                         self.send_json(200, {"ok": True, "status": status}); return
         self.send_json(200, {"ok": True})
+
+    def handle_telegram_webhook(self, payload: dict) -> None:
+        callback = payload.get("callback_query") or {}
+        data = callback.get("data", "")
+        status = handle_approval_callback(data)
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        callback_id = callback.get("id")
+        if token and callback_id:
+            callback_text = ("تم اعتماد الطلب" if status == "approved" else "تم رفض الطلب") if status else "الطلب غير موجود أو تم التعامل معه مسبقًا"
+            try:
+                external_json_request(f"https://api.telegram.org/bot{token}/answerCallbackQuery", {"callback_query_id": callback_id, "text": callback_text, "show_alert": not bool(status)})
+            except Exception as error:
+                print(f"Telegram webhook acknowledgement failed: {error}", file=sys.stderr)
+        if token and status:
+            message = callback.get("message") or {}
+            chat_id = (message.get("chat") or {}).get("id")
+            message_id = message.get("message_id")
+            if chat_id and message_id:
+                try:
+                    external_json_request(f"https://api.telegram.org/bot{token}/editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": f"تم {('قبول' if status == 'approved' else 'رفض')} طلب الصيدلية رقم {data.rsplit(':', 1)[-1]}."})
+                except Exception as error:
+                    print(f"Telegram webhook message update failed: {error}", file=sys.stderr)
+        self.send_json(200, {"ok": True, "status": status or "ignored"})
 
     def handle_register(self, payload: dict) -> None:
         role = str(payload.get("role", ""))

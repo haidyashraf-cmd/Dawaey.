@@ -1179,3 +1179,66 @@ body { background: var(--paper); color: var(--ink); }
 .dialog-phone-link { color: #176d5f; font-weight: 800; text-decoration: none; }
 [data-theme="dark"] .search-workspace .medicine-kicker,
 [data-theme="dark"] .search-workspace .medicine-result-caption span:first-child { color: #8ebdb0 !important; }
+
+
+/* Final calm dark mode: colored slate-teal surfaces, never black. */
+[data-theme="dark"] body { background: #2f4d53 !important; color: #edf6f2 !important; }
+[data-theme="dark"] .site-header { background: #3f6468 !important; border-color: #6f9995 !important; }
+[data-theme="dark"] .hero-section { background: linear-gradient(135deg, #365d63, #4c7370) !important; }
+[data-theme="dark"] .problem-section,
+[data-theme="dark"] .medicine-info-section,
+[data-theme="dark"] .saved-section,
+[data-theme="dark"] .donation-section,
+[data-theme="dark"] .stories-section { background: #3d6063 !important; color: #edf6f2 !important; }
+[data-theme="dark"] .how-section,
+[data-theme="dark"] .assistant-section,
+[data-theme="dark"] .faq-section { background: linear-gradient(135deg, #416c6d, #4b6479) !important; color: #edf6f2 !important; }
+[data-theme="dark"] .audience-section { background: linear-gradient(135deg, #3f7471, #526f91) !important; }
+[data-theme="dark"] .final-cta { background: linear-gradient(135deg, #c79b52, #b97863) !important; }
+[data-theme="dark"] .audience-panel,
+[data-theme="dark"] .medicine-info-card,
+[data-theme="dark"] .saved-layout,
+[data-theme="dark"] .donation-card,
+[data-theme="dark"] .donation-history-card,
+[data-theme="dark"] .assistant-card,
+[data-theme="dark"] .medicine-result,
+[data-theme="dark"] .map-panel,
+[data-theme="dark"] .problem-step,
+[data-theme="dark"] .story-grid article { background: #f0f6f2 !important; border-color: #b2d0c8 !important; color: #24444b !important; box-shadow: 0 10px 25px rgba(20,55,61,.18) !important; }
+[data-theme="dark"] .how-card { background: #eaf3ef !important; color: #24444b !important; border-color: #a9d1c5 !important; }
+[data-theme="dark"] .medicine-result:nth-child(3n+2) { background: #edf1f8 !important; }
+[data-theme="dark"] .medicine-result:nth-child(3n+3) { background: #f5f0e5 !important; }
+[data-theme="dark"] .audience-panel h3,
+[data-theme="dark"] .medicine-info-card h3,
+[data-theme="dark"] .saved-layout h2,
+[data-theme="dark"] .donation-card label,
+[data-theme="dark"] .assistant-card strong,
+[data-theme="dark"] .medicine-result h3,
+[data-theme="dark"] .nearby-heading strong,
+[data-theme="dark"] .nearby-pharmacy-copy strong { color: #24444b !important; }
+[data-theme="dark"] .audience-panel p,
+[data-theme="dark"] .medicine-info-card p,
+[data-theme="dark"] .saved-layout p,
+[data-theme="dark"] .donation-card small,
+[data-theme="dark"] .medicine-result p,
+[data-theme="dark"] .nearby-pharmacy-copy small,
+[data-theme="dark"] .medicine-card-footer > span { color: #5d7275 !important; }
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea { background: #e8f1ed !important; border-color: #9fc3bb !important; color: #24444b !important; }
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder { color: #71888a !important; }
+[data-theme="dark"] .search-workspace { background: #416568 !important; }
+[data-theme="dark"] .search-workspace .medicine-result { background: #edf5f0 !important; border-color: #a9cdc3 !important; }
+[data-theme="dark"] .search-workspace .medicine-result:nth-child(3n+2) { background: #edf1f8 !important; }
+[data-theme="dark"] .search-workspace .medicine-result:nth-child(3n+3) { background: #f5f0e5 !important; }
+[data-theme="dark"] .search-workspace .medicine-title-row h3,
+[data-theme="dark"] .search-workspace .nearby-heading strong,
+[data-theme="dark"] .search-workspace .nearby-pharmacy-copy strong { color: #24444b !important; }
+[data-theme="dark"] .search-workspace .medicine-title-row p,
+[data-theme="dark"] .search-workspace .nearby-pharmacy-copy small,
+[data-theme="dark"] .search-workspace .medicine-card-footer > span { color: #5d7275 !important; }
+.dialog-contact-actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0; }
+.dialog-call-button, .dialog-whatsapp-button { display: inline-flex; padding: 7px 10px; border-radius: 7px; color: #fff; font-size: 10px; font-weight: 800; text-decoration: none; }
+.dialog-call-button { background: #247b71; }
+.dialog-whatsapp-button { background: #25a765; }

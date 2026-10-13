@@ -72,8 +72,8 @@ function getSupply() {
 function getPharmacies() {
   const unique = new Map();
   for (const pharmacy of getSheets()[SHEET_NAMES.pharmacies] ?? []) {
-    const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase();
-    if (name.length < 2 || ["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(name)) continue;
+    const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase().replace(/\s+/g, " ");
+    if (name.length < 2 || ["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => name === term || name.includes(term))) continue;
     const key = [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join("|");
     if (!unique.has(key)) unique.set(key, pharmacy);
   }
@@ -301,7 +301,7 @@ function pharmacyCard(group) {
 function updatePharmacyResults() {
   const query = state.pharmacyQuery.trim().toLocaleLowerCase();
   const results = getPharmacyGroups().filter((group) => [group.name, ...group.records.flatMap((record) => [record["المنطقة / العنوان المتوقع"], record["رقم التليفون / الخط الساخن"]])].join(" ").toLocaleLowerCase().includes(query));
-  const remote = state.externalPharmacies.filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase())).filter((pharmacy) => [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join(" ").toLocaleLowerCase().includes(query));
+  const remote = state.externalPharmacies.filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => { const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase().replace(/\s+/g, " "); return name === term || name.includes(term); })).filter((pharmacy) => [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join(" ").toLocaleLowerCase().includes(query));
   const grid = document.querySelector("#pharmacy-results");
   if (!grid) return;
   const remoteMarkup = remote.map((pharmacy) => pharmacyCard({ name: pharmacy["اسم الصيدلية"], records: [pharmacy] })).join("");
@@ -629,7 +629,7 @@ document.addEventListener("click", (event) => {
         const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=10000`, { credentials: "same-origin" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "تعذر تحميل الصيدليات القريبة.");
-        state.externalPharmacies = (payload.pharmacies || []).filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase()));
+        state.externalPharmacies = (payload.pharmacies || []).filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => { const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase().replace(/\s+/g, " "); return name === term || name.includes(term); }));
         state.pharmacyQuery = "";
         renderPharmacies();
         showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية مسماة قريبة.`);

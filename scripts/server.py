@@ -1114,7 +1114,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}
             name = (tags.get("name:ar") or tags.get("name") or "").strip()
-            if len(name) < 2 or name.casefold() in {"صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"}:
+            normalized_name = " ".join(name.casefold().split())
+            invalid_name_terms = {"صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"}
+            if len(normalized_name) < 2 or any(term == normalized_name or term in normalized_name for term in invalid_name_terms):
                 continue
             address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
             phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"

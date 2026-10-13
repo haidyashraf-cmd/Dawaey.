@@ -210,8 +210,8 @@ function pharmacyName(pharmacy) {
   return String(pharmacy?.["اسم الصيدلية"] || pharmacy?.name || "").trim();
 }
 function hasNamedPharmacy(pharmacy) {
-  const name = pharmacyName(pharmacy).toLocaleLowerCase().trim();
-  return name.length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(name);
+  const name = pharmacyName(pharmacy).toLocaleLowerCase().replace(/\s+/g, " ").trim();
+  return name.length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => name === term || name.includes(term));
 }
 function pharmacyCoordinates(pharmacy) {
   const latitude = Number(pharmacy?.["خط العرض (Latitude)"] ?? pharmacy?.latitude ?? pharmacy?.lat);
@@ -277,7 +277,7 @@ async function loadExternalPharmacies(area = "", coords = null) {
     const response = await fetch(`/api/nearby-pharmacies?${parameters}`, { credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "تعذر تحميل صيدليات GPS.");
-    state.externalPharmacies = payload.pharmacies || [];
+    state.externalPharmacies = (payload.pharmacies || []).filter(hasNamedPharmacy);
     renderAreaResults(area || state.areaQuery);
     if (state.matches.length) renderMedicineResults();
     return state.externalPharmacies;
@@ -857,8 +857,9 @@ function setupEvents() {
     const content = document.querySelector("#pharmacy-details-dialog-content");
     if (!dialog || !content || !pharmacy) return;
     const phone = String(pharmacy.contact || "").replace(/[^\d+]/g, "");
+    const whatsappNumber = phone.replace(/^\+/, "").replace(/^0/, "20");
     const mapTarget = pharmacy.locationUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pharmacy.name || "صيدلية"} ${pharmacy.address || "مصر"}`)}`;
-    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b>${phone ? `<a class="dialog-phone-link" href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "اتصال مباشر")}</a>` : escapeHtml(pharmacy.contact || "غير مسجل")}</p><a class="dialog-map-link" href="${escapeHtml(mapTarget)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>`;
+    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b>${phone ? `<a class="dialog-phone-link" href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "اتصال مباشر")}</a>` : escapeHtml(pharmacy.contact || "غير مسجل")}</p><div class="dialog-contact-actions">${phone ? `<a class="dialog-call-button" href="tel:${escapeHtml(phone)}">اتصال مباشر</a><a class="dialog-whatsapp-button" href="https://wa.me/${escapeHtml(whatsappNumber)}" target="_blank" rel="noopener">فتح واتساب</a>` : ""}</div><a class="dialog-map-link" href="${escapeHtml(mapTarget)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>`;
     dialog.showModal();
   });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));

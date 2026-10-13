@@ -138,6 +138,8 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN latitude REAL")
         if "longitude" not in donation_columns:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN longitude REAL")
+        if "image_data" not in donation_columns:
+            connection.execute("ALTER TABLE donation_requests ADD COLUMN image_data TEXT NOT NULL DEFAULT ''")
         pharmacy_columns = {row["name"] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
         if "latitude" not in pharmacy_columns:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
@@ -726,6 +728,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             "nationalId": row["national_id"],
             "latitude": row["latitude"],
             "longitude": row["longitude"],
+            "imageData": row["image_data"],
             "status": row["status"],
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["updated_at"])),
@@ -743,12 +746,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
                     return
                 rows = connection.execute(
-                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
             elif account["role"] == "patient":
                 rows = connection.execute(
-                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests WHERE account_id = ? ORDER BY created_at DESC LIMIT 50",
                     (account["id"],),
                 ).fetchall()
@@ -778,6 +781,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             raise ValueError("اكتب الكمية بشكل صحيح.")
         if unit not in {"علبة", "شريط", "شراب", "قلم", "أنبوبة مرهم", "أمبول", "بخاخ"}:
             raise ValueError("اختار نوع العبوة من القائمة.")
+        image_data = str(payload.get("imageData", "")).strip()
+        if image_data and (len(image_data) > 4_000_000 or not re.fullmatch(r"data:image/(?:jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+", image_data)):
+            raise ValueError("صورة التبرع غير صالحة أو حجمها كبير.")
         if not valid_egyptian_national_id(national_id):
             raise ValueError("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3.")
         now = int(time.time())
@@ -793,12 +799,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 account_id = account["account_id"] if account else None
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -827,7 +833,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, pharmacy["pharmacy_name"], pharmacy["whatsapp"], f"{pharmacy['address']}، {pharmacy['district']}", pharmacy["location_url"] or (f"https://www.google.com/maps?q={pharmacy['latitude']},{pharmacy['longitude']}" if pharmacy["latitude"] is not None and pharmacy["longitude"] is not None else ""), now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})

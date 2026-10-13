@@ -10,6 +10,27 @@ const aliases = new Map([
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
 function validEgyptianNationalId(value) { return /^[23]\d{13}$/.test(value); }
+function readDonationImage(file) {
+  if (!file) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve("");
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => resolve("");
+      image.onload = () => {
+        const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", .78));
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 const searchInput = document.querySelector("#medicine-search");
 const suggestionList = document.querySelector("#search-suggestions");
@@ -43,14 +64,19 @@ async function searchFromPhoto(file) {
   showToast("بنقرأ اسم الدواء من الصورة بالعربي والإنجليزي...");
   try {
     const Tesseract = await loadOcrScript();
-    const result = await Tesseract.recognize(file, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); } });
+    const result = await Tesseract.recognize(file, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
-    const candidate = findMatches(text)[0];
-    if (!candidate) { showToast("قرأنا الصورة لكن الاسم مش موجود في سجل المصدر؛ جرّب كتابة الاسم."); return; }
+    const candidates = [findMatches(text)[0], ...text.split(/[،,;|\n]+/).map((part) => findMatches(part.trim())[0])].filter(Boolean);
+    const normalizedText = normalize(text);
+    const fallback = getRecords().find((record) => {
+      const name = normalize(record["اسم الدواء"]);
+      return name && (normalizedText.includes(name) || name.split(/\s+/).some((word) => word.length > 3 && normalizedText.includes(word)));
+    });
+    const candidate = candidates[0] || fallback;
+    if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
-  } catch { showToast("تعذر قراءة الصورة. جرّب صورة أوضح أو اكتب اسم الدواء يدويًا."); }
+  } catch { showToast("تعذر قراءة الصورة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
 }
-
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -236,7 +262,7 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     const pharmacy = item.pharmacy;
-    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details>بيانات الصيدلية</button></div><div class="pharmacy-details" hidden><strong>${escapeHtml(pharmacy.name)}</strong><span>العنوان: ${escapeHtml(pharmacy.address || "غير مسجل")}</span><a href="tel:${escapeHtml(String(pharmacy.contact || "").replace(/[^\d+]/g, ""))}">رقم التواصل: ${escapeHtml(pharmacy.contact || "غير مسجل")}</a>${pharmacy.locationUrl ? `<a href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة</a>` : ""}</div>` : "";
+    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button></div>` : "";
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${details}</article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
@@ -543,6 +569,8 @@ function setupDonationAndAssistant() {
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
+    const imageFile = document.querySelector("#donation-image")?.files?.[0];
+    const imageData = await readDonationImage(imageFile);
     if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
@@ -550,7 +578,7 @@ function setupDonationAndAssistant() {
     try {
       const responses = [];
       for (const item of rows) {
-        const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...item, area, nationalId, latitude, longitude }) });
+        const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...item, area, nationalId, latitude, longitude, imageData }) });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
         responses.push(payload.request);
@@ -688,10 +716,14 @@ function setupEvents() {
   document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-pharmacy-details]");
     if (!button) return;
-    const details = button.closest(".notification-item")?.querySelector(".pharmacy-details");
-    if (!details) return;
-    details.hidden = !details.hidden;
-    button.textContent = details.hidden ? "بيانات الصيدلية" : "إخفاء البيانات";
+    const item = state.notifications.find((notification) => String(notification.id) === String(button.dataset.notificationId));
+    const pharmacy = item?.pharmacy;
+    const dialog = document.querySelector("#pharmacy-details-dialog");
+    const content = document.querySelector("#pharmacy-details-dialog-content");
+    if (!dialog || !content || !pharmacy) return;
+    const phone = String(pharmacy.contact || "").replace(/[^\d+]/g, "");
+    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b><a href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "غير مسجل")}</a></p>${pharmacy.locationUrl ? `<a class="dialog-map-link" href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>` : ""}`;
+    dialog.showModal();
   });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {

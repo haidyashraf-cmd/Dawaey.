@@ -233,7 +233,11 @@ function renderNotifications() {
   const unread = state.notifications.filter((item) => !item.isRead).length;
   count.textContent = String(unread);
   count.hidden = unread === 0;
-  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small></article>`).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
+  panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
+    const pharmacy = item.pharmacy;
+    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details>بيانات الصيدلية</button></div><div class="pharmacy-details" hidden><strong>${escapeHtml(pharmacy.name)}</strong><span>العنوان: ${escapeHtml(pharmacy.address || "غير مسجل")}</span><a href="tel:${escapeHtml(String(pharmacy.contact || "").replace(/[^\d+]/g, ""))}">رقم التواصل: ${escapeHtml(pharmacy.contact || "غير مسجل")}</a>${pharmacy.locationUrl ? `<a href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة</a>` : ""}</div>` : "";
+    return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${details}</article>`;
+  }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
 
 async function loadPatientData() {
@@ -255,6 +259,7 @@ async function loadPatientData() {
     state.donations = donationPayload.requests || [];
   }
   renderAccountProfile();
+  renderDonationHistory();
 }
 
 function updateSavedList() {
@@ -280,6 +285,17 @@ function renderAccountProfile() {
   preview.innerHTML = state.donations.length
     ? `<span class="account-preview-title">آخر التبرعات</span>${state.donations.slice(0, 3).map((item) => `<div class="account-donation-row"><strong>${escapeHtml(item.medicine || "دواء")}</strong><small>${escapeHtml(statusLabels[item.status] || "جديد")} · ${escapeHtml(item.area || "المكان غير محدد")}</small></div>`).join("")}`
     : '<span class="account-preview-empty">لسه مفيش تبرعات مسجلة.</span>';
+}
+
+function renderDonationHistory() {
+  const container = document.querySelector("#donation-history");
+  if (!container) return;
+  const labels = { pending: ["قيد المراجعة", "pending"], accepted: ["تم قبول التبرع", "accepted"], completed: ["تم التسليم", "completed"], rejected: ["لم يتم القبول", "rejected"] };
+  if (!state.donations.length) {
+    container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي تفاصيله وحالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
+    return;
+  }
+  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">عرض الإشعارات</a></div></article>`; }).join("");
 }
 
 function updateStats() {
@@ -541,6 +557,9 @@ function setupDonationAndAssistant() {
         if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
         responses.push(payload.request);
       }
+      state.donations = [...responses, ...state.donations];
+      renderAccountProfile();
+      renderDonationHistory();
       const notice = document.querySelector("#donation-results");
       notice.insertAdjacentHTML("afterbegin", `<p class="donation-saved-note"><strong>تم حفظ ${responses.length} تبرع بنجاح.</strong> ستظهر للصيدليات المعتمدة، وعند القبول سيصلك إشعار ببيانات الصيدلية والعنوان ورقم التواصل.</p>`);
     } catch (error) { showToast(error.message || "تعذر تسجيل طلب التبرع."); }
@@ -668,6 +687,14 @@ function setupEvents() {
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
+  document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pharmacy-details]");
+    if (!button) return;
+    const details = button.closest(".notification-item")?.querySelector(".pharmacy-details");
+    if (!details) return;
+    details.hidden = !details.hidden;
+    button.textContent = details.hidden ? "بيانات الصيدلية" : "إخفاء البيانات";
+  });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {
     const query = event.target.value.trim();

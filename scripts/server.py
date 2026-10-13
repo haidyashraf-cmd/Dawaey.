@@ -143,6 +143,10 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN longitude REAL")
         if "location_url" not in pharmacy_columns:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN location_url TEXT NOT NULL DEFAULT ''")
+        notification_columns = {row["name"] for row in connection.execute("PRAGMA table_info(notifications)").fetchall()}
+        for column in ("pharmacy_name", "pharmacy_contact", "pharmacy_address", "pharmacy_location_url"):
+            if column not in notification_columns:
+                connection.execute(f"ALTER TABLE notifications ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -807,7 +811,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not pharmacy_account:
                 return
             previous = connection.execute("SELECT account_id, status, medicine FROM donation_requests WHERE id = ?", (donation_id,)).fetchone()
-            pharmacy = connection.execute("SELECT pharmacy_name, address, district, whatsapp, latitude, longitude FROM pharmacy_applications WHERE account_id = ?", (pharmacy_account["id"],)).fetchone()
+            pharmacy = connection.execute("SELECT pharmacy_name, address, district, whatsapp, latitude, longitude, location_url FROM pharmacy_applications WHERE account_id = ?", (pharmacy_account["id"],)).fetchone()
             cursor = connection.execute(
                 "UPDATE donation_requests SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, donation_id),
@@ -817,8 +821,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 return
             if previous and previous["account_id"] and status == "accepted" and previous["status"] != "accepted":
                 connection.execute(
-                    "INSERT INTO notifications(account_id, kind, title, message, related_id, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?)",
-                    (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, now),
+                    "INSERT INTO notifications(account_id, kind, title, message, related_id, pharmacy_name, pharmacy_contact, pharmacy_address, pharmacy_location_url, created_at) VALUES (?, 'donation_accepted', ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, pharmacy["pharmacy_name"], pharmacy["whatsapp"], f"{pharmacy['address']}، {pharmacy['district']}", pharmacy["location_url"] or (f"https://www.google.com/maps?q={pharmacy['latitude']},{pharmacy['longitude']}" if pharmacy["latitude"] is not None and pharmacy["longitude"] is not None else ""), now),
                 )
             row = connection.execute(
                 "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at FROM donation_requests WHERE id = ?",
@@ -865,8 +869,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             account = self.require_role(connection, "patient")
             if not account:
                 return
-            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
-        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"]))} for row in rows]})
+            rows = connection.execute("SELECT id, kind, title, message, related_id, is_read, created_at, pharmacy_name, pharmacy_contact, pharmacy_address, pharmacy_location_url FROM notifications WHERE account_id = ? ORDER BY created_at DESC LIMIT 50", (account["id"],)).fetchall()
+        self.send_json(200, {"notifications": [{"id": row["id"], "kind": row["kind"], "title": row["title"], "message": row["message"], "relatedId": row["related_id"], "isRead": bool(row["is_read"]), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])), "pharmacy": ({"name": row["pharmacy_name"], "contact": row["pharmacy_contact"], "address": row["pharmacy_address"], "locationUrl": row["pharmacy_location_url"]} if row["pharmacy_name"] else None)} for row in rows]})
 
     def handle_mark_notifications_read(self) -> None:
         with closing(connect_database()) as connection, connection:

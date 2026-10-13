@@ -731,3 +731,58 @@ body { background: var(--paper); color: var(--ink); }
 .assistant-section { background: linear-gradient(135deg,#243f4b 0%,#31586a 100%) !important; color: #f3f8f7 !important; }.assistant-section .section-heading h2 { color: #fff !important; }.assistant-section .section-heading p { color: #d7e8e8 !important; }.assistant-section .eyebrow { color: #a7ead8 !important; }.assistant-prompts button { border-color: rgba(199,231,222,.5) !important; background: rgba(255,255,255,.1) !important; color: #eaf8f4 !important; }.assistant-card { background: #f5faf8 !important; border: 1px solid #b7d4d0 !important; border-radius: 24px 8px 24px 8px !important; box-shadow: 0 22px 52px rgba(13,35,44,.28) !important; }.assistant-head { background: linear-gradient(100deg,#176b65,#356b91) !important; border-radius: 14px 5px 14px 5px !important; }.assistant-messages { background: #edf4f2 !important; }.assistant-message.assistant { background: #dfeee9 !important; color: #183b4a !important; border-right-color: #238f80 !important; }.assistant-message.user { background: #31586a !important; color: #fff !important; border-left-color: #d7ba72 !important; }.assistant-form { background: #fbfdfc !important; border-color: #b9d8d1 !important; }.assistant-form input { color: #183b4a !important; }.assistant-form button { background: #b35d55 !important; }
 @media (prefers-reduced-motion: no-preference) { .search-workspace, .audience-section, .medicine-info-section, .saved-section, .donation-section, .donations-history-section, .assistant-section { background-size: 180% 180%; animation: patient-section-breathe 18s ease-in-out infinite alternate; } .medicine-info-card, .saved-layout, .donation-card, .assistant-card { animation: patient-card-rise .65s cubic-bezier(.22,1,.36,1) both; } }
 @keyframes patient-section-breathe { from { background-position: 0% 45%; } to { background-position: 100% 55%; } } @keyframes patient-card-rise { from { opacity: .78; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+
+/* Dark readable results treatment: visual-only, no interaction changes. */
+.search-workspace {
+  background: radial-gradient(circle at 8% 12%, rgba(66,183,166,.16), transparent 240px), radial-gradient(circle at 92% 82%, rgba(74,126,185,.15), transparent 280px), linear-gradient(135deg, #172f3d 0%, #1d3f4b 52%, #203849 100%) !important;
+  border-color: #345866 !important;
+  color: #edf7f5 !important;
+  box-shadow: inset 0 22px 55px rgba(4,18,28,.22), inset 0 -22px 55px rgba(4,18,28,.18) !important;
+}
+.search-workspace .compact-heading h2, .search-workspace .compact-heading p, .search-workspace .data-caveat { color: #eaf5f3 !important; }
+.search-workspace .compact-heading .eyebrow { color: #8bd8c7 !important; }
+.search-workspace .clear-search { background: #294d5a !important; border-color: #4a7880 !important; color: #e7f5f2 !important; }
+.search-workspace .clear-search:hover { background: #347063 !important; color: #fff !important; }
+.result-filters { background: rgba(18,48,61,.78) !important; border-color: #416875 !important; box-shadow: 0 10px 24px rgba(4,18,28,.18); }
+.filter-chip { background: #294b59 !important; border-color: #4d727d !important; color: #d9ece9 !important; }
+.filter-chip.is-active, .filter-chip:hover:not(:disabled) { background: #36a995 !important; border-color: #65d0bd !important; color: #092c35 !important; }
+.medicine-result { background: linear-gradient(145deg, #294b58 0%, #23404d 100%) !important; border-color: #4c707a !important; box-shadow: 0 13px 30px rgba(4,18,28,.28) !important; }
+.medicine-result:hover { border-color: #6bd3c0 !important; box-shadow: 0 20px 40px rgba(3,19,29,.36) !important; transform: translateY(-4px) !important; }
+.medicine-result:nth-child(3n+2) { border-right-color: #6f9fe0 !important; }
+.medicine-result:nth-child(3n+3) { border-right-color: #d6a95b !important; }
+.medicine-glyph { background: #356875 !important; color: #a7ead8 !important; box-shadow: 0 6px 14px rgba(4,18,28,.2); }
+.medicine-title-row h3, .medicine-kicker, .nearby-heading strong, .nearby-pharmacy-copy strong { color: #f1faf8 !important; }
+.medicine-title-row p, .medicine-result-caption span:last-child, .nearby-heading > span, .nearby-pharmacy-copy small, .nearby-caveat { color: #b7d0d2 !important; }
+.medicine-result-caption { border-top-color: #416570 !important; }
+.medicine-result-caption span:first-child { color: #8bd8c7 !important; }
+.medicine-meta span { background: #315361 !important; border-color: #4b707a !important; color: #d5e9e7 !important; }
+.medicine-status { background: #2f776e !important; color: #e8fffa !important; }
+.medicine-status.low { background: #806739 !important; color: #fff1c7 !important; }
+.medicine-status.out { background: #7c4b4e !important; color: #ffe4e1 !important; }
+.save-medicine { background: #544a31 !important; border-color: #bd9a52 !important; color: #ffe9ad !important; }
+.medicine-nearby { background: #203d49 !important; border-color: #416875 !important; }
+.nearby-pharmacy { background: #294b58 !important; border-color: #4c707a !important; }
+.nearby-call { background: #2c9b88 !important; color: #fff !important; box-shadow: 0 7px 15px rgba(3,35,39,.24) !important; }
+.nearby-call:hover { background: #49c4ae !important; color: #092c35 !important; }
+.search-workspace .map-panel { background: #1d3a47 !important; border-color: #416875 !important; box-shadow: 0 15px 34px rgba(4,18,28,.3) !important; }
+.map-panel-head { background: #254b59 !important; border-color: #416875 !important; }
+.map-panel-head h3, .directory-overview strong, .area-result { color: #edf8f6 !important; }
+.map-tag { background: #2b6a69 !important; color: #d9fff6 !important; }
+.directory-overview { background: linear-gradient(135deg, #294f59, #29465a) !important; border-color: #4b747b !important; }
+.directory-overview small, .area-privacy-note { color: #b9d2d4 !important; }
+.area-search { color: #c5dcda !important; }
+.area-search input { background: #132e3b !important; border-color: #4a727d !important; color: #eefaf8 !important; }
+.area-search input::placeholder { color: #91afb3 !important; }
+.gps-directory-button { background: #2d9c89 !important; color: #fff !important; }
+.gps-directory-button:hover { background: #48c3ae !important; color: #082d36 !important; }
+.area-results { scrollbar-color: #4c8b88 transparent; }
+.area-result { background: #294b58 !important; border-color: #416875 !important; }
+.area-result a { color: #8bd8c7 !important; }
+.area-result small, .data-caveat { color: #a9c4c6 !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .search-workspace { background-size: 180% 180%; animation: results-dark-breathe 16s ease-in-out infinite alternate; }
+  .medicine-result, .map-panel { animation: results-card-in .55s cubic-bezier(.22,1,.36,1) both; }
+}
+@keyframes results-dark-breathe { from { background-position: 0% 42%; } to { background-position: 100% 58%; } }
+@keyframes results-card-in { from { opacity: .72; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

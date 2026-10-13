@@ -409,3 +409,5 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 
 .field-hint { display:block; margin-top:4px; color:#64748b; font-size:10px; }
 .donation-card select { min-height:44px; width:100%; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); font:inherit; }
+
+.upload-file-button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border:1px solid var(--teal,#00a58f);border-radius:8px;background:#e8fffa;color:#007f78;cursor:pointer;font-size:11px;font-weight:800}.upload-file-button:hover{background:#00a58f;color:#fff}

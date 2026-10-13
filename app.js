@@ -271,7 +271,7 @@ function renderInventory() {
   const quickCategories = ["الكل", ...allCategories.slice(0, 5)];
   content.innerHTML = `
     ${pageHeading("الأدوية والمخزون", "ابحث في الأصناف المسجلة وراجع حالة المخزون وحدود التوريد.", "كتالوج دوائي")}
-    <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="inventory-search" type="search" value="${escapeHtml(state.inventoryQuery)}" placeholder="اسم الدواء، الكود، أو الفئة" autocomplete="off" aria-label="ابحث في الأدوية"></label><span class="toolbar-meta">الكمية حسب ملف الأصناف والتوريد</span></div>
+    <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="inventory-search" type="search" value="${escapeHtml(state.inventoryQuery)}" placeholder="اسم الدواء، الكود، أو الفئة" autocomplete="off" aria-label="ابحث في الأدوية"></label><label class="upload-file-button">رفع ملف الصيدلية<input id="pharmacy-data-file" type="file" accept=".xlsx,.csv,.json" hidden></label><span class="toolbar-meta">بيانات مخزون وتوريد صيدليتك فقط</span></div>
     <div class="filter-row" aria-label="تصفية حسب الفئة والحالة">
       ${quickCategories.map((category) => `<button class="filter-chip ${state.inventoryCategory === category ? "is-active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
       <button class="filter-chip stock-filter ${state.inventoryFilter === "الكل" ? "is-active" : ""}" data-stock-filter="الكل">كل الحالات</button><button class="filter-chip stock-filter danger-filter ${state.inventoryFilter === "out" ? "is-active" : ""}" data-stock-filter="out">خطر</button><button class="filter-chip stock-filter warning-filter ${state.inventoryFilter === "low" ? "is-active" : ""}" data-stock-filter="low">على وشك الخطر</button>
@@ -501,6 +501,17 @@ async function loadDashboardData() {
   if (payload.sheets) return { source: payload.source, sheets: payload.sheets };
   return { source: payload.source, sheets: { "الاصناف والكميات": payload.catalog || [], "طلبات التوريد": payload.catalog || [], "بيانات الصيداليات": payload.pharmacies || [] } };
 }
+async function uploadPharmacyData(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch("/api/pharmacy/upload", { method: "POST", credentials: "same-origin", body: formData });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "تعذر رفع ملف الصيدلية.");
+  state.data = await loadDashboardData();
+  showView(state.view, false);
+  showToast(`تم رفع ${payload.filename}؛ بيانات صيدليتك أصبحت منفصلة.`);
+}
+
 async function startApp() {
   document.querySelector("#today-label").textContent = dateFormat.format(new Date());
   try {
@@ -630,6 +641,12 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.id === "pharmacy-data-file" && event.target.files?.[0]) {
+    const file = event.target.files[0];
+    uploadPharmacyData(file).catch((error) => showToast(error.message));
+    event.target.value = "";
+    return;
+  }
   if (event.target.id === "category-select") {
     state.inventoryCategory = event.target.value;
     state.inventoryPage = 0;

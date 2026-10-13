@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import hmac
 import json
 import math
@@ -19,6 +21,8 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
+
+from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data" / "dawaey-data.json"
@@ -111,6 +115,14 @@ def initialize_database() -> None:
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS notifications_account ON notifications(account_id, is_read, created_at DESC);
+            CREATE TABLE IF NOT EXISTS pharmacy_data_files (
+                account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+                filename TEXT NOT NULL,
+                inventory_json TEXT NOT NULL DEFAULT '[]',
+                supply_json TEXT NOT NULL DEFAULT '[]',
+                pharmacies_json TEXT NOT NULL DEFAULT '[]',
+                uploaded_at INTEGER NOT NULL
+            );
             """
         )
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(donation_requests)").fetchall()}
@@ -358,6 +370,103 @@ def google_user_profile(access_token: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def uploaded_json_value(value):
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def clean_uploaded_rows(rows):
+    return [{str(key).strip(): uploaded_json_value(value) for key, value in row.items() if str(key).strip()} for row in rows[:10000] if isinstance(row, dict)]
+
+
+def classify_uploaded_sheet(name, rows):
+    name_text = str(name or "").lower()
+    headers = " ".join(str(key) for row in rows[:3] for key in row.keys())
+    if any(token in name_text or token in headers for token in ("توريد", "كمية التوريد", "الحد الأدنى")):
+        return "supply"
+    if any(token in name_text or token in headers for token in ("صيدال", "pharmacy", "اسم الصيدلية", "رقم التليفون")):
+        return "pharmacies"
+    return "inventory"
+
+
+def parse_uploaded_rows(content, filename):
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".xlsx":
+        try:
+            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except Exception as error:
+            raise ValueError("تعذر قراءة ملف Excel. تأكد أنه ملف XLSX سليم.") from error
+        parsed = {}
+        for sheet in workbook.worksheets:
+            values = list(sheet.iter_rows(values_only=True))
+            if not values:
+                continue
+            headers = [str(value).strip() if value is not None else "" for value in values[0]]
+            rows = []
+            for values_row in values[1:]:
+                row = {headers[index]: uploaded_json_value(value) for index, value in enumerate(values_row) if index < len(headers) and headers[index]}
+                if any(value != "" for value in row.values()):
+                    rows.append(row)
+            if rows:
+                parsed[classify_uploaded_sheet(sheet.title, rows)] = clean_uploaded_rows(rows)
+    elif suffix in {".csv", ".txt"}:
+        text = None
+        for encoding in ("utf-8-sig", "cp1256", "utf-8"):
+            try:
+                text = content.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            raise ValueError("تعذر قراءة ملف CSV؛ احفظه بترميز UTF-8.")
+        delimiter = ";" if text.count(";") > text.count(",") else ","
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
+        parsed = {classify_uploaded_sheet(filename, rows): clean_uploaded_rows(rows)}
+    elif suffix == ".json":
+        try:
+            payload = json.loads(content.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("ملف JSON غير صالح.") from error
+        sheets = payload.get("sheets", payload) if isinstance(payload, dict) else {}
+        parsed = {classify_uploaded_sheet(name, rows): clean_uploaded_rows(rows) for name, rows in sheets.items() if isinstance(rows, list)}
+    else:
+        raise ValueError("ارفع ملف Excel بصيغة XLSX أو ملف CSV أو JSON.")
+    if not parsed:
+        raise ValueError("الملف لا يحتوي على جداول بيانات.")
+    return {"inventory": parsed.get("inventory", []), "supply": parsed.get("supply", []), "pharmacies": parsed.get("pharmacies", [])}
+
+
+def read_uploaded_multipart(handler):
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError as error:
+        raise ValueError("تعذر قراءة حجم الملف.") from error
+    if length < 1 or length > 12 * 1024 * 1024:
+        raise ValueError("حجم الملف غير صالح؛ الحد الأقصى 12 ميجابايت.")
+    content_type = handler.headers.get("Content-Type", "")
+    match = re.search(r"boundary=(?:\"([^\"]+)\"|([^;]+))", content_type)
+    if not match:
+        raise ValueError("صيغة رفع الملف غير صالحة.")
+    boundary = (match.group(1) or match.group(2)).encode("utf-8")
+    body = handler.rfile.read(length)
+    for part in body.split(b"--" + boundary):
+        if b"filename=" not in part or b"\r\n\r\n" not in part:
+            continue
+        headers, file_content = part.split(b"\r\n\r\n", 1)
+        filename_match = re.search(rb'filename="([^"]*)"', headers)
+        filename = (filename_match.group(1) if filename_match else b"file.xlsx").decode("utf-8", errors="replace")
+        file_content = file_content.rstrip(b"\r\n-")
+        if not file_content:
+            raise ValueError("الملف المرفوع فارغ.")
+        return filename, file_content
+    raise ValueError("لم يتم العثور على ملف في الطلب.")
+
+
 class DawaeyHandler(SimpleHTTPRequestHandler):
     server_version = "DawaeyLocal/1.0"
 
@@ -474,6 +583,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if route == "/api/pharmacy/bootstrap":
             self.handle_pharmacy_bootstrap()
             return
+        if route == "/api/pharmacy/upload":
+            self.handle_pharmacy_upload()
+            return
         if route == "/api/donations":
             self.handle_donations()
             return
@@ -517,6 +629,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 self.handle_mark_notifications_read()
             elif route == "/api/logout":
                 self.handle_logout()
+            elif route == "/api/pharmacy/upload":
+                self.handle_pharmacy_upload()
             elif route == "/webhooks/whatsapp":
                 self.handle_whatsapp_webhook(payload)
             else:
@@ -758,6 +872,20 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             self.log_error("Google OAuth failed: %s", error)
             self.redirect_to_auth("تعذر تسجيل الدخول باستخدام Google. تأكد من إعداد OAuth وحاول مرة أخرى.")
 
+    def handle_pharmacy_upload(self) -> None:
+        with closing(connect_database()) as connection, connection:
+            account = self.require_role(connection, "pharmacy")
+            if not account:
+                return
+            filename, content = read_uploaded_multipart(self)
+            parsed = parse_uploaded_rows(content, filename)
+            connection.execute(
+                "INSERT INTO pharmacy_data_files(account_id, filename, inventory_json, supply_json, pharmacies_json, uploaded_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET filename=excluded.filename, inventory_json=excluded.inventory_json, supply_json=excluded.supply_json, pharmacies_json=excluded.pharmacies_json, uploaded_at=excluded.uploaded_at",
+                (account["id"], Path(filename).name[:180], json.dumps(parsed["inventory"], ensure_ascii=False), json.dumps(parsed["supply"], ensure_ascii=False), json.dumps(parsed["pharmacies"], ensure_ascii=False), int(time.time())),
+            )
+        self.send_json(200, {"ok": True, "filename": Path(filename).name, "counts": {key: len(value) for key, value in parsed.items()}})
+
+
     def handle_pharmacy_bootstrap(self) -> None:
         token = self.get_session_token()
         if not token:
@@ -773,6 +901,10 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if not application or application["status"] != "approved":
                 self.send_json(403, {"error": "حساب الصيدلية لم يتم اعتماده بعد."})
                 return
+            uploaded = connection.execute("SELECT filename, inventory_json, supply_json, pharmacies_json, uploaded_at FROM pharmacy_data_files WHERE account_id = ?", (account["id"],)).fetchone()
+        if uploaded:
+            self.send_json(200, {"source": f"ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": json.loads(uploaded["inventory_json"]), "طلبات التوريد": json.loads(uploaded["supply_json"]), "بيانات الصيداليات": json.loads(uploaded["pharmacies_json"])}})
+            return
         self.handle_bootstrap()
 
     def handle_bootstrap(self) -> None:

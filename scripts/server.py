@@ -34,7 +34,7 @@ OAUTH_STATE_SECONDS = 600
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
 def valid_egyptian_national_id(value: str) -> bool:
-    return bool(re.fullmatch(r"\d{14}", value))
+    return bool(re.fullmatch(r"[23]\d{13}", value))
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
@@ -779,7 +779,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if unit not in {"علبة", "شريط", "شراب", "قلم", "أنبوبة مرهم", "أمبول", "بخاخ"}:
             raise ValueError("اختار نوع العبوة من القائمة.")
         if not valid_egyptian_national_id(national_id):
-            raise ValueError("الرقم القومي لازم يكون 14 رقمًا بالضبط.")
+            raise ValueError("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3.")
         now = int(time.time())
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()

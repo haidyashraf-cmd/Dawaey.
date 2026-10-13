@@ -9,7 +9,7 @@ const aliases = new Map([
   ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"],
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
-function validEgyptianNationalId(value) { return /^\d{14}$/.test(value); }
+function validEgyptianNationalId(value) { return /^[23]\d{13}$/.test(value); }
 
 const searchInput = document.querySelector("#medicine-search");
 const suggestionList = document.querySelector("#search-suggestions");
@@ -543,7 +543,7 @@ function setupDonationAndAssistant() {
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
-    if (!validEgyptianNationalId(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقمًا بالضبط."); return; }
+    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
     loadExternalPharmacies(area, latitude && longitude ? { latitude, longitude } : null).then(() => renderDonationResults(rows[0].medicine, area));

@@ -244,7 +244,7 @@ function getNearbyPharmacies(query = state.areaQuery) {
   // Remote results were already located by GPS/geocoding; do not hide them
   // because a full street address is longer than the directory label.
   if (state.externalPharmacies.length && query === state.areaQuery) {
-    return [...directoryMatches, ...state.externalPharmacies];
+    return [...directoryMatches, ...state.externalPharmacies.filter(hasNamedPharmacy)];
   }
   return directoryMatches;
 }
@@ -558,15 +558,20 @@ function setupObservers() {
 
 function renderDonationResults(medicine, area) {
   const container = document.querySelector("#donation-results");
-  const entries = getNearbyPharmacies(area).slice(0, 12);
+  const entries = getNearbyPharmacies(area).filter(hasNamedPharmacy).slice(0, 12);
   if (!medicine || !area) { container.innerHTML = "<p>اكتب اسم الدواء والمنطقة أو استخدم GPS لعرض الصيدليات القريبة.</p>"; return; }
   const matches = findMatches(medicine);
   const medicineName = matches[0]?.["اسم الدواء"] || medicine;
   if (!entries.length) { container.innerHTML = `<p>لم نجد صيدليات في المكان حاليًا. جرّب اسم منطقة أو استخدم GPS مرة أخرى.</p>`; return; }
-  container.innerHTML = `<div class="donation-result-title"><strong>صيدليات قريبة للتواصل بخصوص ${escapeHtml(medicineName)}</strong><small>${numberFormat.format(entries.length)} نتيجة من الدليل وOpenStreetMap</small></div>` + entries.map((pharmacy) => {
+  const donorLat = document.querySelector("#donation-latitude")?.value || "";
+  const donorLon = document.querySelector("#donation-longitude")?.value || "";
+  const donorMapLink = donorLat && donorLon ? `<a class="donation-location-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donorLat},${donorLon}`)}" target="_blank" rel="noopener">فتح موقعي الحقيقي على الخريطة</a>` : "";
+  container.innerHTML = `<div class="donation-result-title"><strong>صيدليات قريبة للتواصل بخصوص ${escapeHtml(medicineName)}</strong><small>${numberFormat.format(entries.length)} نتيجة من الدليل وOpenStreetMap</small>${donorMapLink}</div>` + entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="donation-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<em>${escapeHtml(phone || "رقم غير مدرج")}</em>`}</div>`;
+    const address = String(pharmacy["المنطقة / العنوان المتوقع"] || area);
+    const mapLink = pharmacyMapUrl(pharmacy, address);
+    return `<div class="donation-result"><span><strong>${escapeHtml(pharmacyName(pharmacy))}</strong><small>${escapeHtml(address)}</small><a class="donation-location-link" href="${mapLink}" target="_blank" rel="noopener">فتح الموقع الحقيقي على الخريطة ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<em>${escapeHtml(phone || "رقم غير مدرج")}</em>`}</div>`;
   }).join("");
 }
 
@@ -598,6 +603,15 @@ function assistantReply(question) {
     { words: ["ارهاق", "تعب", "كسل", "جسمي مكسر", "تكسير"], category: "إرهاق أو تكسير بالجسم", options: "الراحة والسوائل وقياس الحرارة قد يساعدون، واستشر طبيبًا إذا استمر التعب أو صاحبه فقدان وزن أو ضيق نفس" },
     { words: ["التهاب عين", "عينى", "عيني", "احمرار العين", "حرقان العين"], category: "أعراض العين", options: "تجنب استخدام قطرات المضاد أو الكورتيزون دون فحص، واطلب تقييمًا سريعًا عند ألم شديد أو ضعف نظر" },
     { words: ["طفح", "حباية", "حبوب", "حكة جلد", "حساسية جلد"], category: "أعراض جلدية", options: "اسأل الصيدلي عن علاج مناسب حسب شكل الطفح، واطلب الطوارئ عند تورم الوجه أو صعوبة التنفس" },
+    { words: ["برد", "نزلة برد", "دور برد", "إنفلونزا", "انفلونزا"], category: "نزلة برد أو إنفلونزا محتملة", options: "الراحة والسوائل وقياس الحرارة مهمون؛ اسأل الصيدلي عن علاج للأعراض، ولا تبدأ مضادًا حيويًا لأن أغلب نزلات البرد فيروسية" },
+    { words: ["سكر", "السكر", "السكري", "مريض سكر", "داء السكري"], category: "السكري", options: "لا تغيّر علاج السكر أو جرعته من نفسك؛ راقب القياس والتزم بخطة الطبيب، واطلب المساعدة عند هبوط شديد أو اضطراب وعي" },
+    { words: ["ضغط", "ضغط الدم", "الضغط العالي", "ضغط واطي", "ارتفاع الضغط"], category: "ضغط الدم", options: "قِس الضغط بهدوء وأعد القياس، ولا توقف علاجك دون الطبيب؛ القراءة العالية جدًا مع ألم صدر أو ضيق نفس تستدعي الطوارئ" },
+    { words: ["ربو", "ازمة صدر", "أزمة صدر", "حساسية صدر", "نهجان مزمن"], category: "الربو أو حساسية الصدر", options: "استخدم بخاخك الموصوف فقط حسب خطة الطبيب، واطلب الطوارئ عند صعوبة الكلام أو ضيق النفس الشديد" },
+    { words: ["انيميا", "أنيميا", "فقر دم", "هيموجلوبين قليل"], category: "الأنيميا أو فقر الدم", options: "التشخيص يحتاج تحليل دم؛ لا تبدأ الحديد عشوائيًا، واستشر الطبيب لمعرفة السبب والعلاج المناسب" },
+    { words: ["قولون", "قولون عصبي", "القولون", "انتفاخ مزمن"], category: "القولون العصبي المحتمل", options: "راقب الأطعمة التي تزيد الأعراض واشرب سوائل، واطلب كشفًا عند نزيف أو فقدان وزن أو ألم مستمر" },
+    { words: ["التهاب معدة", "قرحة", "قرحة معدة", "جرثومة المعدة", "جرثومه المعده"], category: "مشكلات المعدة أو جرثومة محتملة", options: "لا تعتمد على علاج عشوائي؛ جرثومة المعدة تحتاج اختبارًا وخطة يحددها الطبيب، والطوارئ مطلوبة عند قيء دموي أو براز أسود" },
+    { words: ["التهاب جيوب", "جيوب انفية", "جيوب أنفية", "الجيوب"], category: "التهاب أو احتقان الجيوب الأنفية", options: "الغسول الملحي والسوائل قد يساعدان، واستشر الطبيب إذا استمرت الحرارة أو الألم أو ظهرت أعراض شديدة" },
+    { words: ["التهاب بول", "التهاب المسالك", "حرقان البول", "مسالك بولية"], category: "التهاب مسالك بولية محتمل", options: "يحتاج غالبًا تحليلًا وتقييمًا طبيًا، ولا تبدأ مضادًا حيويًا من نفسك؛ اطلب تقييمًا عاجلًا مع حرارة أو ألم بالجنب" },
   ];
   const matched = advice.find((item) => item.words.some((word) => query.includes(normalize(word))));
   if (matched) {
@@ -630,6 +644,7 @@ function setupDonationAndAssistant() {
     event.preventDefault();
     const areaInput = document.querySelector("#donation-area");
     const area = areaInput.value.trim();
+    state.areaQuery = area;
     const nationalId = document.querySelector("#donation-national-id").value.replace(/\D/g, "");
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
@@ -678,6 +693,7 @@ function setupDonationAndAssistant() {
         const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
         const payload = await response.json();
         document.querySelector("#donation-area").value = payload.displayName || payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
+        state.areaQuery = document.querySelector("#donation-area").value.trim();
         showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
       } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
     }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 });

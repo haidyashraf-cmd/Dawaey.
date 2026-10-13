@@ -1059,7 +1059,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             radius = min(max(int(float(parameters.get("radius", ["15000"])[0])), 1000), 25000)
         except ValueError:
             radius = 10000
-        overpass_query = f"[out:json][timeout:18];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
+        overpass_query = f"[out:json][timeout:12];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
         request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
         payload = None
         for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
@@ -1074,8 +1074,8 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             # An exact street geocode can land on a small map tile with no
             # pharmacy nodes. Retry around the same point before declaring it
             # empty, so a full address still returns nearby pharmacies.
-            wide_radius = min(max(radius * 2, 30000), 50000)
-            wide_query = f"[out:json][timeout:25];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
+            wide_radius = min(max(radius * 2, 16000), 22000)
+            wide_query = f"[out:json][timeout:12];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
             for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
                 try:
                     wide_request = Request(endpoint, data=urllib.parse.urlencode({"data": wide_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
@@ -1114,10 +1114,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}
             name = (tags.get("name:ar") or tags.get("name") or "").strip()
-            if len(name) < 2:
+            if len(name) < 2 or name.casefold() in {"صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"}:
                 continue
             address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
             phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"
+            if len(name) < 2:
+                continue
             pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": phone, "source": "OpenStreetMap", "lat": item.get("lat") or (item.get("center") or {}).get("lat"), "lon": item.get("lon") or (item.get("center") or {}).get("lon")})
         self.send_json(200, {"pharmacies": pharmacies[:100], "source": "OpenStreetMap", "latitude": latitude, "longitude": longitude})
 

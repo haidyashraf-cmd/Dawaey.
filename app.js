@@ -72,6 +72,8 @@ function getSupply() {
 function getPharmacies() {
   const unique = new Map();
   for (const pharmacy of getSheets()[SHEET_NAMES.pharmacies] ?? []) {
+    const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase();
+    if (name.length < 2 || ["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(name)) continue;
     const key = [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join("|");
     if (!unique.has(key)) unique.set(key, pharmacy);
   }
@@ -299,7 +301,7 @@ function pharmacyCard(group) {
 function updatePharmacyResults() {
   const query = state.pharmacyQuery.trim().toLocaleLowerCase();
   const results = getPharmacyGroups().filter((group) => [group.name, ...group.records.flatMap((record) => [record["المنطقة / العنوان المتوقع"], record["رقم التليفون / الخط الساخن"]])].join(" ").toLocaleLowerCase().includes(query));
-  const remote = state.externalPharmacies.filter((pharmacy) => [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join(" ").toLocaleLowerCase().includes(query));
+  const remote = state.externalPharmacies.filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase())).filter((pharmacy) => [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join(" ").toLocaleLowerCase().includes(query));
   const grid = document.querySelector("#pharmacy-results");
   if (!grid) return;
   const remoteMarkup = remote.map((pharmacy) => pharmacyCard({ name: pharmacy["اسم الصيدلية"], records: [pharmacy] })).join("");
@@ -321,8 +323,8 @@ function renderPharmacies() {
 function updateSupplyResults() {
   const query = state.supplyQuery.trim().toLocaleLowerCase();
   const records = getSupply().filter((record) => [record["اسم الدواء"], record["طبيعة الدواء"], record["حالة المخزون"]].join(" ").toLocaleLowerCase().includes(query));
-  const rows = records.slice(0, 30).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(record["الكمية الحالية"])}</td><td>${escapeHtml(record["وحدة القياس"] || "—")}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td><td>${record["حالة التوريد"] ? `<span class="table-secondary">${escapeHtml(record["حالة التوريد"])}</span>` : "—"}</td></tr>`).join("");
-  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الكمية الحالية</th><th>وحدة القياس</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th><th>حالة التوريد</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 30 ? ` · عرض أول ${formatNumber(30)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
+  const rows = records.slice(0, 10).map((record) => `<tr><td><span class="table-primary">${escapeHtml(record["اسم الدواء"])}</span><span class="table-secondary">${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span></td><td class="number-cell">${formatNumber(record["الكمية الحالية"])}</td><td>${escapeHtml(record["وحدة القياس"] || "—")}</td><td class="number-cell">${formatNumber(record["الحد الأدنى"])}</td><td>${statusMarkup(getStockState(record))}</td><td class="number-cell">${formatNumber(record["كمية التوريد المقترحة"])}</td><td>${record["حالة التوريد"] ? `<span class="table-secondary">${escapeHtml(record["حالة التوريد"])}</span>` : "—"}</td></tr>`).join("");
+  document.querySelector("#supply-results").innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>الصنف والفئة</th><th>الكمية الحالية</th><th>وحدة القياس</th><th>حد الطلب</th><th>حالة المخزون</th><th>الكمية المقترحة</th><th>حالة التوريد</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state"><strong>مفيش بيانات مطابقة</strong>جرّب اسم دواء أو فئة تانية.</div></td></tr>'}</tbody></table></div><div class="pagination"><span class="pagination-label">${formatNumber(records.length)} سجل في الملف${records.length > 10 ? ` · عرض أول ${formatNumber(10)}` : ""}</span><span class="pagination-label">اقتراحات وليست طلبات مؤكدة</span></div>`;
   document.querySelector("#supply-count").textContent = `${formatNumber(records.length)} سجل`;
 }
 
@@ -558,6 +560,7 @@ document.addEventListener("click", (event) => {
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) {
     event.preventDefault();
+    if (viewButton.dataset.view === "inventory" && viewButton.hasAttribute("data-close-alerts")) state.inventoryFilter = "low";
     showView(viewButton.dataset.view);
     return;
   }
@@ -623,13 +626,13 @@ document.addEventListener("click", (event) => {
       try {
         const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
         if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
-        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=25000`, { credentials: "same-origin" });
+        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=10000`, { credentials: "same-origin" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "تعذر تحميل الصيدليات القريبة.");
-        state.externalPharmacies = payload.pharmacies || [];
+        state.externalPharmacies = (payload.pharmacies || []).filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase()));
         state.pharmacyQuery = "";
         renderPharmacies();
-        showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية قريبة.`);
+        showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية مسماة قريبة.`);
       } catch (error) { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast(error.message || "تعذر تحميل صيدليات GPS."); }
     }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."); }, { timeout: 10000, maximumAge: 60000 });
   }

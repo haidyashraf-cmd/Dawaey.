@@ -209,7 +209,10 @@ function renderMedicineCard(record) {
 function pharmacyName(pharmacy) {
   return String(pharmacy?.["اسم الصيدلية"] || pharmacy?.name || "").trim();
 }
-function hasNamedPharmacy(pharmacy) { return pharmacyName(pharmacy).length > 1; }
+function hasNamedPharmacy(pharmacy) {
+  const name = pharmacyName(pharmacy).toLocaleLowerCase().trim();
+  return name.length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف"].includes(name);
+}
 function pharmacyCoordinates(pharmacy) {
   const latitude = Number(pharmacy?.["خط العرض (Latitude)"] ?? pharmacy?.latitude ?? pharmacy?.lat);
   const longitude = Number(pharmacy?.["خط الطول (Longitude)"] ?? pharmacy?.longitude ?? pharmacy?.lon);
@@ -269,7 +272,7 @@ function nearbyPharmacyMarkup(record) {
 }
 
 async function loadExternalPharmacies(area = "", coords = null) {
-  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=25000` : `area=${encodeURIComponent(area)}&radius=25000`;
+  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=10000` : `area=${encodeURIComponent(area)}&radius=10000`;
   try {
     const response = await fetch(`/api/nearby-pharmacies?${parameters}`, { credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
@@ -321,7 +324,8 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     const pharmacy = item.pharmacy;
-    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button></div>` : "";
+    const contact = pharmacy?.contact ? String(pharmacy.contact).replace(/[^\d+]/g, "") : "";
+    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button>${contact ? `<a class="notification-call" href="tel:${escapeHtml(contact)}">اتصال مباشر</a>` : ""}</div>` : "";
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${details}</article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
@@ -374,7 +378,7 @@ function renderDonationHistory() {
     container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي حالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
     return;
   }
-  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">الإشعارات</a></div></article>`; }).join("");
+  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications" data-open-notifications>الإشعارات</a></div></article>`; }).join("");
 }
 
 function updateStats() {
@@ -615,18 +619,30 @@ function assistantReply(question) {
   ];
   const matched = advice.find((item) => item.words.some((word) => query.includes(normalize(word))));
   if (matched) {
+    const diseaseCare = {
+      "نزلة برد أو إنفلونزا محتملة": ["باراسيتامول للألم أو الحرارة بعد سؤال الصيدلي", "طبيب باطنة أو طبيب أسرة إذا استمرت الحرارة أو ساءت الحالة"],
+      "السكري": ["علاج السكر الموصوف لك فقط، ولا تغيّر الجرعة بنفسك", "طبيب باطنة أو طبيب غدد وسكر"],
+      "ضغط الدم": ["دواء الضغط الموصوف لك فقط، ولا توقفه دون الطبيب", "طبيب باطنة أو طبيب قلب"],
+      "الربو أو حساسية الصدر": ["البخاخ الموصوف في خطة الطبيب فقط", "طبيب صدرية أو حساسية ومناعة"],
+      "الأنيميا أو فقر الدم": ["مكمل الحديد فقط بعد تحليل وتحديد السبب", "طبيب باطنة أو أمراض دم"],
+      "القولون العصبي المحتمل": ["علاج الأعراض يحدده الصيدلي أو الطبيب حسب الحالة", "طبيب جهاز هضمي"],
+      "مشكلات المعدة أو جرثومة محتملة": ["علاج جرثومة المعدة يكون بروتوكولًا يحدده الطبيب بعد الاختبار", "طبيب جهاز هضمي"],
+      "التهاب أو احتقان الجيوب الأنفية": ["غسول ملحي وعلاج للأعراض بعد سؤال الصيدلي", "طبيب أنف وأذن"],
+      "التهاب مسالك بولية محتمل": ["لا تبدأ مضادًا حيويًا قبل التحليل ووصفة الطبيب", "طبيب مسالك بولية أو باطنة"]
+    };
+    const care = diseaseCare[matched.category];
     const tokens = matched.options.split(/مثل|أو|،/).map((token) => normalize(token)).filter((token) => token.length > 3);
     const catalog = getRecords().filter((record) => {
       const text = `${normalize(record["اسم الدواء"])} ${normalize(record["طبيعة الدواء"])} ${normalize(record["المادة الفعالة"])}`;
       return text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
     const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
-    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>خيارات عامة تسأل عنها الصيدلي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
+    return `أفهم إنك بتسأل عن <strong>${escapeHtml(matched.category)}</strong>.<br><strong>العلاج أو الدواء المحتمل:</strong> ${care ? escapeHtml(care[0]) : matched.options}.<br><strong>التخصص المناسب:</strong> ${care ? escapeHtml(care[1]) : "طبيب أو صيدلي حسب الحالة"}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
   }
   const areaMatch = question.match(/(?:في|بـ|ب|منطقة)\s+(.+)/i);
   if (query.includes("صيدلي") || query.includes("فرع") || query.includes("عنوان")) {
     const area = areaMatch?.[1]?.trim() || state.areaQuery;
-    const entries = getNearbyPharmacies(area).slice(0, 10);
+    const entries = getNearbyPharmacies(area).filter(hasNamedPharmacy).slice(0, 10);
     if (entries.length) return `لقيت ${numberFormat.format(entries.length)} صيدليات في ${escapeHtml(area)}. تواصل معهم قبل الذهاب للتأكد من الخدمة والتوفر.`;
     return "اكتب اسم المنطقة أو المحافظة بشكل أوضح، وسأبحث في دليل الصيدليات القريبة.";
   }
@@ -816,6 +832,21 @@ function setupEvents() {
     if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest("[data-open-notifications]");
+    if (!link) return;
+    event.preventDefault();
+    const panel = document.querySelector("#notifications-panel");
+    const button = document.querySelector("#patient-notifications");
+    panel?.removeAttribute("hidden");
+    button?.setAttribute("aria-expanded", "true");
+    panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (state.notifications.some((item) => !item.isRead)) {
+      await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }).catch(() => {});
+      state.notifications = state.notifications.map((item) => ({ ...item, isRead: true }));
+      renderNotifications();
+    }
+  });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-pharmacy-details]");
@@ -826,7 +857,8 @@ function setupEvents() {
     const content = document.querySelector("#pharmacy-details-dialog-content");
     if (!dialog || !content || !pharmacy) return;
     const phone = String(pharmacy.contact || "").replace(/[^\d+]/g, "");
-    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b><a href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "غير مسجل")}</a></p>${pharmacy.locationUrl ? `<a class="dialog-map-link" href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>` : ""}`;
+    const mapTarget = pharmacy.locationUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pharmacy.name || "صيدلية"} ${pharmacy.address || "مصر"}`)}`;
+    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b>${phone ? `<a class="dialog-phone-link" href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "اتصال مباشر")}</a>` : escapeHtml(pharmacy.contact || "غير مسجل")}</p><a class="dialog-map-link" href="${escapeHtml(mapTarget)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>`;
     dialog.showModal();
   });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));

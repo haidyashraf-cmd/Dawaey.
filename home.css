@@ -1148,3 +1148,34 @@ body { background: var(--paper); color: var(--ink); }
 .donation-gps-location { display: inline-flex; width: fit-content; margin-top: -3px; color: #176d5f; font-size: 9px; font-weight: 800; text-decoration: none; }
 .donation-gps-location:hover { color: #0d4e46; text-decoration: underline; }
 [data-theme="dark"] .donation-gps-location { color: #a7ead4 !important; }
+
+/* Calm readable result labels and notification actions. */
+.search-workspace .compact-heading .eyebrow,
+.search-workspace .medicine-kicker,
+.search-workspace .medicine-result-caption span:first-child { color: #55756f !important; }
+.search-workspace .medicine-title-row h3 { color: #294b53 !important; }
+.search-workspace .medicine-title-row p,
+.search-workspace .medicine-result-caption span:last-child,
+.search-workspace .medicine-card-footer > span { color: #61777a !important; }
+.notification-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
+.notification-call { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 7px; background: #d9eee7; color: #176d5f; font-size: 9px; font-weight: 800; text-decoration: none; }
+.notification-call:hover { background: #c5e4da; }
+.dialog-phone-link { color: #176d5f; font-weight: 800; text-decoration: none; }
+[data-theme="dark"] .search-workspace .medicine-kicker,
+[data-theme="dark"] .search-workspace .medicine-result-caption span:first-child { color: #8ebdb0 !important; }
+
+
+/* Calm readable result labels and notification actions. */
+.search-workspace .compact-heading .eyebrow,
+.search-workspace .medicine-kicker,
+.search-workspace .medicine-result-caption span:first-child { color: #55756f !important; }
+.search-workspace .medicine-title-row h3 { color: #294b53 !important; }
+.search-workspace .medicine-title-row p,
+.search-workspace .medicine-result-caption span:last-child,
+.search-workspace .medicine-card-footer > span { color: #61777a !important; }
+.notification-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
+.notification-call { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 7px; background: #d9eee7; color: #176d5f; font-size: 9px; font-weight: 800; text-decoration: none; }
+.notification-call:hover { background: #c5e4da; }
+.dialog-phone-link { color: #176d5f; font-weight: 800; text-decoration: none; }
+[data-theme="dark"] .search-workspace .medicine-kicker,
+[data-theme="dark"] .search-workspace .medicine-result-caption span:first-child { color: #8ebdb0 !important; }

@@ -281,21 +281,12 @@ function renderAccountProfile() {
   if (savedCount) savedCount.textContent = String(state.saved.size);
   if (donationCount) donationCount.textContent = String(state.donations.length);
   if (!preview) return;
-  const statusLabels = { pending: "قيد المراجعة", accepted: "تم القبول", completed: "تم التسليم", rejected: "مرفوض" };
-  preview.innerHTML = state.donations.length
-    ? `<span class="account-preview-title">آخر التبرعات</span>${state.donations.slice(0, 3).map((item) => `<div class="account-donation-row"><strong>${escapeHtml(item.medicine || "دواء")}</strong><small>${escapeHtml(statusLabels[item.status] || "جديد")} · ${escapeHtml(item.area || "المكان غير محدد")}</small></div>`).join("")}`
-    : '<span class="account-preview-empty">لسه مفيش تبرعات مسجلة.</span>';
+
 }
 
 function renderDonationHistory() {
   const container = document.querySelector("#donation-history");
-  if (!container) return;
-  const labels = { pending: ["قيد المراجعة", "pending"], accepted: ["تم قبول التبرع", "accepted"], completed: ["تم التسليم", "completed"], rejected: ["لم يتم القبول", "rejected"] };
-  if (!state.donations.length) {
-    container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي تفاصيله وحالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
-    return;
-  }
-  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">عرض الإشعارات</a></div></article>`; }).join("");
+  if (container) container.innerHTML = "";
 }
 
 function updateStats() {

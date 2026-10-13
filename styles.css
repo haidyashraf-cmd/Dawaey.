@@ -494,3 +494,9 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 [data-theme="dark"] .stock-alert-panel { background: #f7faf9 !important; border-color: #c5d8d6 !important; }
 [data-theme="dark"] .stock-alert-item strong,
 [data-theme="dark"] .alert-panel-heading { color: #24434b !important; }
+
+.donation-location-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+.donor-map-link, .pharmacy-map-link { display: inline-flex; align-items: center; padding: 7px 10px; border-radius: 7px; color: #fff; font-size: 10px; font-weight: 800; text-decoration: none; }
+.donor-map-link { background: #287b86; }
+.pharmacy-map-link { background: #247b71; }
+.location-missing { color: #8b6b39; font-size: 10px; font-weight: 700; }

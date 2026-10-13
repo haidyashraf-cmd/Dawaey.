@@ -747,6 +747,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         }
 
     def handle_donations(self) -> None:
+        pharmacy_location = None
         with closing(connect_database()) as connection:
             account = self.authenticated_account(connection)
             if not account:
@@ -761,6 +762,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
+                location_row = connection.execute("SELECT latitude, longitude, location_url FROM pharmacy_applications WHERE account_id = ?", (account["id"],)).fetchone()
+                if location_row:
+                    pharmacy_location = {"latitude": location_row["latitude"], "longitude": location_row["longitude"], "locationUrl": location_row["location_url"]}
             elif account["role"] == "patient":
                 rows = connection.execute(
                     "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
@@ -770,7 +774,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             else:
                 self.send_json(403, {"error": "هذه الخدمة متاحة للمريض أو الصيدلية فقط."})
                 return
-        self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
+        requests = [self.donation_public(row) for row in rows]
+        if account["role"] == "pharmacy":
+            for request in requests:
+                request["pharmacyLocation"] = pharmacy_location
+        self.send_json(200, {"requests": requests})
 
     def handle_create_donation(self, payload: dict) -> None:
         medicine = str(payload.get("medicine", "")).strip()

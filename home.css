@@ -1242,3 +1242,6 @@ body { background: var(--paper); color: var(--ink); }
 .dialog-call-button, .dialog-whatsapp-button { display: inline-flex; padding: 7px 10px; border-radius: 7px; color: #fff; font-size: 10px; font-weight: 800; text-decoration: none; }
 .dialog-call-button { background: #247b71; }
 .dialog-whatsapp-button { background: #25a765; }
+/* GPS action: clear, prominent, and easy to tap on mobile. */
+.gps-directory-button, .gps-tool { border: 1px solid rgba(18, 122, 111, .32); background: linear-gradient(135deg, #e8f7f2, #d7eee9); color: #075d58; font-weight: 800; box-shadow: 0 5px 14px rgba(18, 122, 111, .12); }
+.gps-directory-button:hover, .gps-tool:hover { background: linear-gradient(135deg, #d8f0e9, #c7e7e0); transform: translateY(-1px); }

@@ -139,7 +139,7 @@ function renderOverview() {
   const pharmacies = getPharmacyGroups();
   const supply = getSupply();
   const availableCount = supply.filter((record) => getStockState(record) === "available").length;
-  const reorderCount = supply.filter((record) => getStockState(record) !== "available").length;
+  const reorderCount = Math.min(stockAlertRecords(supply).length, 10);
   const safeCount = supply.filter((record) => getStockState(record) === "available").length;
   const warningCount = supply.filter((record) => getStockState(record) === "low").length;
   const dangerCount = supply.filter((record) => getStockState(record) === "out").length;
@@ -650,7 +650,7 @@ document.addEventListener("click", (event) => {
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         state.pharmacyCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacies near ${coords.latitude},${coords.longitude}`)}`;
+        const mapUrl = `https://www.google.com/maps/@${coords.latitude},${coords.longitude},15z`;
         if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
         const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=6000`, { credentials: "same-origin" });
         const payload = await response.json();
@@ -660,7 +660,7 @@ document.addEventListener("click", (event) => {
         renderPharmacies();
         showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية مسماة قريبة.`);
       } catch (error) { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast(error.message || "تعذر تحميل صيدليات GPS."); }
-    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."); }, { timeout: 10000, maximumAge: 60000 });
+    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."); }, { enableHighAccuracy: true, timeout: 7000, maximumAge: 300000 });
   }
 });
 

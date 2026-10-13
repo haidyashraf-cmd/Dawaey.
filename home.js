@@ -354,9 +354,13 @@ function renderNotifications() {
 }
 
 async function loadPatientData() {
-  const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" }), fetch("/api/donations", { credentials: "same-origin" })]);
-  state.saved = new Set();
-  try { localStorage.removeItem("dawaey-saved-medications"); } catch { /* Ignore storage restrictions. */ }
+  const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch(`/api/saved-medicines?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" }), fetch(`/api/notifications?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" }), fetch(`/api/donations?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" })]);
+  if (savedResponse.ok) {
+    const savedPayload = await savedResponse.json();
+    state.saved = new Set((savedPayload.medicineKeys || []).map(String));
+  } else {
+    state.saved = new Set();
+  }
   if (notificationsResponse.ok) {
     const notificationPayload = await notificationsResponse.json();
     state.notifications = notificationPayload.notifications || [];
@@ -818,6 +822,8 @@ function setupEvents() {
     const patientMapWindow = window.open("about:blank", "dawaey-patient-nearby-map");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      const patientMapUrl = `https://www.google.com/maps/@${coords.latitude},${coords.longitude},15z`;
+      if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.replace(patientMapUrl);
       try {
         const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });
         const areaPayload = await areaResponse.json().catch(() => ({}));
@@ -825,8 +831,6 @@ function setupEvents() {
         state.areaQuery = area;
         state.areaFromGps = true;
         state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const patientMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacies near ${coords.latitude},${coords.longitude}`)}`;
-        if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.href = patientMapUrl;
         document.querySelector("#area-search").value = area;
         const mapPanel = document.querySelector(".search-workspace .map-panel");
         if (mapPanel) {
@@ -856,7 +860,7 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     const button = document.querySelector("#patient-notifications");
     const opening = panel?.hasAttribute("hidden");
-    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
+    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
   });
   document.addEventListener("click", async (event) => {
@@ -869,7 +873,7 @@ function setupEvents() {
     button?.setAttribute("aria-expanded", "true");
     panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (state.notifications.some((item) => !item.isRead)) {
-      await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }).catch(() => {});
+      await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }).catch(() => {});
       state.notifications = state.notifications.map((item) => ({ ...item, isRead: true }));
       renderNotifications();
     }

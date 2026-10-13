@@ -612,3 +612,107 @@ body { background: var(--paper); }
 .assistant-section { background: linear-gradient(135deg, #102a43, #124c63) !important; }.assistant-section .section-heading h2 { color: #fff !important; }.assistant-section .section-heading p { color: #d8edf0 !important; }.assistant-section .eyebrow { color: #7ff8dc !important; }.assistant-prompts button { border-color: rgba(255,255,255,.45) !important; background: rgba(255,255,255,.14) !important; color: #fff !important; }.assistant-prompts button:hover { background: #00a58f !important; color: #fff !important; }.assistant-card { border: 1px solid #b8d7df !important; border-radius: 18px !important; background: #fff !important; box-shadow: 0 20px 45px rgba(0,0,0,.2) !important; }.assistant-head { margin: -1px -1px 0; padding: 12px !important; border-bottom: 0 !important; border-radius: 12px !important; background: #087462 !important; color: #fff !important; }.assistant-head strong, .assistant-head small { color: #fff !important; }.assistant-head small { opacity: .82; }.assistant-avatar { background: #ffc857 !important; color: #153344 !important; }.assistant-messages { min-height: 190px !important; max-height: 300px !important; padding: 16px 5px !important; background: #fbfdfc; }.assistant-message { max-width: 82% !important; padding: 10px 13px !important; border-radius: 14px !important; font-size: 10px !important; line-height: 1.9 !important; box-shadow: 0 4px 12px rgba(21,51,68,.08) !important; }.assistant-message.assistant { border-bottom-right-radius: 4px !important; background: #e8f6f1 !important; color: #153344 !important; }.assistant-message.user { border-bottom-left-radius: 4px !important; background: #123248 !important; color: #fff !important; }.assistant-message strong { color: inherit !important; }.assistant-form { padding: 11px 0 0 !important; border-top-color: #dce7e2 !important; }.assistant-form input { border-color: #c7ded8 !important; background: #fff !important; color: #153344 !important; }.assistant-form button { min-height: 42px !important; background: #e94f55 !important; color: #fff !important; }
 .faq-section { background: #102a43 !important; color: #fff !important; }.faq-section .section-heading h2 { color: #fff !important; }.faq-section .section-heading p, .faq-section .eyebrow { color: #d8edf0 !important; }.faq-list { border-color: rgba(255,255,255,.22) !important; }.faq-list details { border-color: rgba(255,255,255,.24) !important; background: rgba(255,255,255,.08) !important; }.faq-list summary { color: #fff !important; }.faq-list details p { color: #d8edf0 !important; }.faq-list summary span { background: #ffc857 !important; color: #153344 !important; }.faq-list details[open] summary span { background: #00a58f !important; color: #fff !important; }
 .site-header { background: rgba(255,255,255,.97) !important; box-shadow: 0 5px 18px rgba(21,51,68,.06); }.main-nav a { color: #294b57 !important; }.main-nav a:hover, .main-nav a.is-active { color: #087462 !important; }.brand strong { color: #153344 !important; }.brand small { color: #087462 !important; }.login-link { border-color: #087462 !important; color: #087462 !important; }.login-link:hover { background: #087462 !important; color: #fff !important; }.header-emergency { color: #b3262e !important; }
+
+
+/* Patient area refresh: calm, readable colors without changing layout or interactions. */
+:root {
+  --paper: #f2f7f5;
+  --surface: #ffffff;
+  --surface-soft: #e8f1ef;
+  --ink: #183b4a;
+  --muted: #557078;
+  --line: #d4e3df;
+  --teal: #238f80;
+  --teal-deep: #176b65;
+  --teal-pale: #dcefe9;
+  --blue: #356b91;
+  --navy: #244957;
+  --amber: #a66f24;
+  --amber-pale: #f8ecd5;
+  --danger: #ad5c55;
+  --danger-pale: #f8e5e0;
+  --shadow: 0 16px 40px rgba(29, 70, 77, .09);
+}
+body { background: var(--paper); color: var(--ink); }
+.site-header, .site-header.is-scrolled { background: rgba(247, 251, 250, .96) !important; border-bottom-color: #d2e2de !important; box-shadow: 0 4px 18px rgba(28, 67, 72, .05); }
+.brand strong, .main-nav a, .login-link { color: #244957 !important; }
+.brand small, .main-nav a:hover, .main-nav a.is-active { color: #176b65 !important; }
+.main-nav a.is-active::after { background: #238f80 !important; }
+.login-link { border-color: #238f80 !important; }
+.login-link:hover { background: #238f80 !important; }
+.search-workspace { background: #edf5f2 !important; border-color: #d4e3df !important; color: #183b4a; }
+.search-workspace .section-heading h2, .search-workspace .section-heading p, .search-workspace .eyebrow { color: #183b4a !important; }
+.search-workspace .eyebrow { color: #176b65 !important; }
+.result-filters { background: #e3efec !important; border-color: #cfe0db !important; }
+.filter-chip { color: #41616a !important; }
+.filter-chip.is-active { background: #ffffff !important; color: #176b65 !important; box-shadow: 0 2px 8px rgba(23,107,101,.11); }
+.result-list, .map-panel { color: #183b4a; }
+.medicine-result { background: #ffffff !important; border-color: #d2e3df !important; box-shadow: 0 8px 22px rgba(28, 72, 77, .07) !important; }
+.medicine-result:hover { border-color: #79b9aa !important; box-shadow: 0 12px 28px rgba(28, 72, 77, .12) !important; }
+.medicine-kicker, .medicine-title-row h3 { color: #183b4a !important; }
+.medicine-title-row p, .medicine-result-caption { color: #557078 !important; }
+.medicine-result-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 11px; padding-top: 9px; border-top: 1px solid #e0ebe7; font-size: 10px; line-height: 1.7; }
+.medicine-result-caption span:first-child { color: #176b65; font-weight: 800; }
+.medicine-result-caption span:last-child { color: #6b7f84; }
+.medicine-nearby { background: #f5faf8 !important; border-color: #cfe2dc !important; color: #183b4a !important; }
+.nearby-heading strong, .nearby-pharmacy-copy strong { color: #183b4a !important; }
+.nearby-heading span, .nearby-pharmacy-copy > span { color: #62787d !important; }
+.nearby-pharmacy { border-color: #d7e6e1 !important; }
+.nearby-address { display: block; margin-top: 3px; color: #176b65 !important; font-size: 10px; line-height: 1.7; text-decoration: underline; text-decoration-color: #9bc9bd; text-underline-offset: 3px; }
+.nearby-address:hover { color: #0d514c !important; }
+.nearby-call { background: #238f80 !important; color: #fff !important; box-shadow: none !important; }
+.nearby-call:hover { background: #176b65 !important; }
+.map-panel { background: #f8fbfa !important; border-color: #d2e3df !important; box-shadow: 0 10px 28px rgba(28,72,77,.07) !important; }
+.map-panel-head h3, .directory-overview strong { color: #183b4a !important; }
+.map-panel-head .eyebrow { color: #176b65 !important; }
+.map-tag, .directory-overview small, .area-privacy-note { color: #62787d !important; }
+.area-search input { background: #fff !important; border-color: #c8ddd7 !important; color: #183b4a !important; }
+.gps-directory-button { background: #dcefe9 !important; border-color: #8fc7b8 !important; color: #176b65 !important; }
+.gps-directory-button:hover { background: #238f80 !important; color: #fff !important; }
+.area-result { background: #fff !important; border-color: #d7e6e1 !important; color: #183b4a !important; }
+.area-result a { color: #176b65 !important; }
+.data-caveat { color: #62787d !important; }
+.audience-section { background: #e8f2ef !important; color: #183b4a !important; }
+.audience-section .eyebrow, .audience-section .quiet-link { color: #176b65 !important; }
+.audience-intro h2, .audience-intro > p { color: #183b4a !important; }
+.audience-tabs { background: #dcebe7 !important; border-color: #c4dcd5 !important; }
+.audience-tab { color: #48666d !important; }
+.audience-tab.is-active { background: #fff !important; color: #176b65 !important; }
+.audience-panel { background: #fff !important; border-color: #d0e2dd !important; box-shadow: 0 10px 25px rgba(28,72,77,.07) !important; }
+.audience-panel h3, .audience-panel p, .audience-panel li { color: #183b4a !important; }
+.audience-panel p { color: #557078 !important; }
+.medicine-info-section { background: #eef4f5 !important; color: #183b4a !important; }
+.medicine-info-section .eyebrow { color: #356b91 !important; }
+.medicine-info-section .section-heading h2, .medicine-info-section .section-heading p { color: #183b4a !important; }
+.medicine-info-section .section-heading p { color: #557078 !important; }
+.medicine-info-card { background: #fafdfe !important; border-color: #c9dfe4 !important; box-shadow: 0 12px 30px rgba(38,80,91,.08) !important; }
+.medicine-info-content h3, .medicine-info-content .info-subtitle { color: #244957 !important; }
+.info-item { background: #e8f1f4 !important; border: 1px solid #d4e5e9; }
+.info-item b { color: #356b91 !important; }
+.info-item span, .medicine-info-empty p, .medicine-info-content p { color: #557078 !important; }
+.info-warning { color: #8b641f !important; }
+.saved-section { background: #f5f3ed !important; color: #183b4a !important; }
+.saved-section .eyebrow { color: #a66f24 !important; }
+.saved-section h2, .saved-section > .wrap > div > p { color: #183b4a !important; }
+.saved-section > .wrap > div > p { color: #557078 !important; }
+.saved-item { background: #fffdf8 !important; border-color: #e6d9bd !important; }
+.donation-section { background: #edf6f2 !important; color: #183b4a !important; }
+.donation-section .eyebrow { color: #176b65 !important; }
+.donation-section .section-heading h2, .donation-section .section-heading p { color: #183b4a !important; }
+.donation-section .section-heading p { color: #557078 !important; }
+.donation-card { background: #fbfefd !important; border-color: #cfe2dc !important; box-shadow: 0 12px 30px rgba(28,72,77,.08) !important; }
+.donation-card label, .donation-card input, .donation-card select { color: #183b4a !important; }
+.donation-card input, .donation-card select { background: #fff !important; border-color: #c8ddd7 !important; }
+.donation-card .primary-button { background: #238f80 !important; }
+.donation-card .primary-button:hover { background: #176b65 !important; }
+.assistant-section { background: #e9f1f4 !important; color: #183b4a !important; }
+.assistant-section .section-heading h2, .assistant-section .section-heading p { color: #183b4a !important; }
+.assistant-section .section-heading p { color: #557078 !important; }
+.assistant-section .eyebrow { color: #356b91 !important; }
+.assistant-card { background: #fbfefd !important; border-color: #c9dfe4 !important; }
+.assistant-message.assistant { background: #e8f1f4 !important; color: #183b4a !important; }
+.assistant-message.user { background: #238f80 !important; color: #fff !important; }
+.assistant-form button { background: #238f80 !important; }
+.hero-search-tools .text-tool { color: #e8f4f1 !important; }
+.hero-search-tools .text-tool:hover { color: #d7ba72 !important; }
+.voice-search.is-listening { color: #d7ba72 !important; }

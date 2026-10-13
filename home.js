@@ -48,22 +48,57 @@ function loadOcrScript() {
   return new Promise((resolve, reject) => { const script = document.createElement("script"); script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"; script.onload = () => resolve(window.Tesseract); script.onerror = reject; document.head.appendChild(script); });
 }
 
+function prepareMedicineImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(2.4, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(900, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(900, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.filter = "grayscale(1) contrast(1.25) brightness(1.08)";
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas);
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image-load")); };
+    image.src = url;
+  });
+}
+
+function findMedicineFromText(text) {
+  const clean = String(text || "").replace(/[|\n\r,،;؛:()\[\]{}]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  const words = clean.split(" ").filter(Boolean);
+  const phrases = [clean];
+  for (let size = Math.min(5, words.length); size >= 1; size -= 1) {
+    for (let index = 0; index + size <= words.length; index += 1) phrases.push(words.slice(index, index + size).join(" "));
+  }
+  let best = null;
+  for (const phrase of phrases) {
+    const match = findMatches(phrase)[0];
+    if (!match) continue;
+    if (!best || match.score > best.score || (match.score === best.score && phrase.length > best.length)) best = { match, score: match.score, length: phrase.length };
+    if (match.score === 100) break;
+  }
+  return best?.match || null;
+}
+
 async function searchFromPhoto(file) {
   showToast("بنقرأ اسم الدواء من الصورة بالعربي والإنجليزي...");
   try {
     const Tesseract = await loadOcrScript();
-    const result = await Tesseract.recognize(file, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6 });
+    const image = await prepareMedicineImage(file);
+    const result = await Tesseract.recognize(image, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
-    const candidates = [findMatches(text)[0], ...text.split(/[،,;|\n]+/).map((part) => findMatches(part.trim())[0])].filter(Boolean);
-    const normalizedText = normalize(text);
-    const fallback = getRecords().find((record) => {
-      const name = normalize(record["اسم الدواء"]);
-      return name && (normalizedText.includes(name) || name.split(/\s+/).some((word) => word.length > 3 && normalizedText.includes(word)));
-    });
-    const candidate = candidates[0] || fallback;
+    const candidate = findMedicineFromText(text);
     if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
-  } catch { showToast("تعذر قراءة الصورة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
+  } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
 }
 
 function escapeHtml(value) {
@@ -145,7 +180,7 @@ function renderMedicineCard(record) {
   return `<article class="medicine-result">
     <span class="medicine-glyph" aria-hidden="true"><i></i><b>Rx</b></span>
     <div class="medicine-main"><div class="medicine-title-row"><div><span class="medicine-kicker">نتيجة من سجل دوائي</span><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
-      <div class="medicine-meta"><span><b>الكود</b>${escapeHtml(record["الكود"] || "—")}</span><span><b>الكمية</b>${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span><b>حد الطلب</b>${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span><b>المادة الفعالة</b>${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
+      <div class="medicine-result-caption"><span>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span><span>اختار الدواء لعرض معلوماته</span></div>
       <div class="medicine-card-footer"><button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button><span>اضغط على البطاقة لعرض التفاصيل</span></div>
     </div>
     ${nearby}
@@ -193,8 +228,12 @@ function nearbyPharmacyMarkup(record) {
   const pharmacies = entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    const location = String(pharmacy["المنطقة / العنوان المتوقع"] ?? "").split(/\s*[-–/]\s*/).at(-1) ?? area;
-    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(location)} · مطابقة لمنطقتك</small><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
+    const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? area);
+    const latitude = Number(pharmacy["خط العرض (Latitude)"]);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"]);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener" aria-label="فتح عنوان ${escapeHtml(pharmacy["اسم الصيدلية"])} على الخريطة">${escapeHtml(address)} <span aria-hidden="true">⌖</span></a><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
   }).join("");
   return `<section class="medicine-nearby"><div class="nearby-heading"><strong>الصيدليات الأقرب حسب المنطقة</strong><span>${escapeHtml(area)}</span></div><div class="nearby-pharmacy-list">${pharmacies}</div><p class="nearby-caveat">الترتيب حسب المنطقة المسجلة، مش المسافة الدقيقة. ملف المصدر لا يربط مخزون الدواء بالفرع.</p></section>`;
 }
@@ -230,7 +269,12 @@ function renderAreaResults(query = "") {
   container.innerHTML = entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="area-result"><span>${escapeHtml(pharmacy["اسم الصيدلية"])}<br><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
+    const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? query);
+    const latitude = Number(pharmacy["خط العرض (Latitude)"] ?? pharmacy.latitude ?? pharmacy.lat);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"] ?? pharmacy.longitude ?? pharmacy.lon);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<div class="area-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><br><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener">${escapeHtml(address)} ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
   }).join("");
 }
 
@@ -403,7 +447,9 @@ function setupVoiceSearch() {
   recognition.lang = "ar-EG";
   recognition.interimResults = false;
   recognition.onresult = (event) => {
-    searchInput.value = event.results[0][0].transcript;
+    const transcript = event.results[0][0].transcript.trim();
+    const candidate = findMedicineFromText(transcript);
+    searchInput.value = candidate?.["اسم الدواء"] || transcript;
     performSearch(searchInput.value);
   };
   recognition.onerror = () => showToast("ما قدرناش نسمع بوضوح، جرّب تكتب اسم الدواء");

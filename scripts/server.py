@@ -727,12 +727,28 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
 
     def handle_donations(self) -> None:
         with closing(connect_database()) as connection:
-            if not self.require_role(connection, "pharmacy"):
+            account = self.authenticated_account(connection)
+            if not account:
+                self.send_json(401, {"error": "سجّل الدخول أولًا."})
                 return
-            rows = connection.execute(
-                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
-                "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
+            if account["role"] == "pharmacy":
+                application = connection.execute("SELECT status FROM pharmacy_applications WHERE account_id = ?", (account["id"],)).fetchone()
+                if not application or application["status"] != "approved":
+                    self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
+                    return
+                rows = connection.execute(
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
+                    "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
+                ).fetchall()
+            elif account["role"] == "patient":
+                rows = connection.execute(
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, status, created_at, updated_at "
+                    "FROM donation_requests WHERE account_id = ? ORDER BY created_at DESC LIMIT 50",
+                    (account["id"],),
+                ).fetchall()
+            else:
+                self.send_json(403, {"error": "هذه الخدمة متاحة للمريض أو الصيدلية فقط."})
+                return
         self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
 
     def handle_create_donation(self, payload: dict) -> None:

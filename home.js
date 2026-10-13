@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [] };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [] };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -237,7 +237,7 @@ function renderNotifications() {
 }
 
 async function loadPatientData() {
-  const [savedResponse, notificationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" })]);
+  const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" }), fetch("/api/donations", { credentials: "same-origin" })]);
   if (savedResponse.ok) {
     const savedPayload = await savedResponse.json();
     const serverSaved = new Set((savedPayload.medicineKeys || []).map(String));
@@ -250,6 +250,11 @@ async function loadPatientData() {
     const notificationPayload = await notificationsResponse.json();
     state.notifications = notificationPayload.notifications || [];
   }
+  if (donationsResponse.ok) {
+    const donationPayload = await donationsResponse.json();
+    state.donations = donationPayload.requests || [];
+  }
+  renderAccountProfile();
 }
 
 function updateSavedList() {
@@ -257,9 +262,24 @@ function updateSavedList() {
   const records = getRecords().filter((record) => state.saved.has(String(record["م"])));
   if (!records.length) {
     savedList.innerHTML = '<span class="saved-empty">لسه مفيش أدوية محفوظة.</span>';
+    renderAccountProfile();
     return;
   }
   savedList.innerHTML = records.map((record) => `<span class="saved-item">${escapeHtml(record["اسم الدواء"])}<button type="button" data-remove-saved="${escapeHtml(record["م"])}" aria-label="حذف ${escapeHtml(record["اسم الدواء"])} من أدويتي">×</button></span>`).join("");
+  renderAccountProfile();
+}
+
+function renderAccountProfile() {
+  const savedCount = document.querySelector("#account-saved-count");
+  const donationCount = document.querySelector("#account-donation-count");
+  const preview = document.querySelector("#account-donation-preview");
+  if (savedCount) savedCount.textContent = String(state.saved.size);
+  if (donationCount) donationCount.textContent = String(state.donations.length);
+  if (!preview) return;
+  const statusLabels = { pending: "قيد المراجعة", accepted: "تم القبول", completed: "تم التسليم", rejected: "مرفوض" };
+  preview.innerHTML = state.donations.length
+    ? `<span class="account-preview-title">آخر التبرعات</span>${state.donations.slice(0, 3).map((item) => `<div class="account-donation-row"><strong>${escapeHtml(item.medicine || "دواء")}</strong><small>${escapeHtml(statusLabels[item.status] || "جديد")} · ${escapeHtml(item.area || "المكان غير محدد")}</small></div>`).join("")}`
+    : '<span class="account-preview-empty">لسه مفيش تبرعات مسجلة.</span>';
 }
 
 function updateStats() {
@@ -727,8 +747,11 @@ function setupAccountMenu() {
   wrap.hidden = false;
   trigger.textContent = state.user.name || "حسابي";
   if (menuName) menuName.textContent = state.user.name || "حساب المريض";
+  const avatar = document.querySelector(".account-avatar");
+  if (avatar) avatar.textContent = [...(state.user.name || "مريض")].find((character) => /\p{L}/u.test(character)) || "م";
   trigger.setAttribute("aria-label", `فتح قائمة حساب ${state.user.name || "المريض"}`);
   trigger.addEventListener("click", () => { const open = menu.hidden; menu.hidden = !open; trigger.setAttribute("aria-expanded", String(open)); });
+  renderAccountProfile();
   logout?.addEventListener("click", async () => {
     logout.disabled = true;
     try {

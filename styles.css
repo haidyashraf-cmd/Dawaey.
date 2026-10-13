@@ -513,3 +513,34 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 #donation-image-dialog::backdrop { background: rgba(8, 24, 31, .68); }
 #donation-image-dialog img { display: block; max-width: 84vw; max-height: 78vh; object-fit: contain; border-radius: 8px; }
 .donation-image-close { position: absolute; top: 6px; inset-inline-end: 6px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; cursor: pointer; font-size: 20px; line-height: 1; }
+
+/* زر GPS داخل دليل الصيدليات */
+.gps-directory-button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 15px;
+  border: 1px solid #8fc7b8;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e8f7f2, #d7eee9);
+  color: #075d58;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 5px 14px rgba(18, 122, 111, .12);
+  transition: transform .18s, background .18s, box-shadow .18s;
+}
+.gps-directory-button:hover,
+.gps-directory-button:focus-visible {
+  background: linear-gradient(135deg, #d8f0e9, #c7e7e0);
+  box-shadow: 0 7px 18px rgba(18, 122, 111, .18);
+  transform: translateY(-1px);
+  outline: none;
+}
+@media (max-width: 700px) {
+  .gps-directory-button { width: 100%; }
+}

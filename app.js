@@ -25,6 +25,7 @@ const state = {
   supplyQuery: "",
   toastTimer: null,
   alertSignature: "",
+  alertsAcknowledged: false,
   alertTimer: null,
   donations: [],
   externalPharmacies: [],
@@ -376,7 +377,7 @@ function renderDonations() {
     const donorLink = donorMap ? `<a class="donor-map-link" href="${donorMap}" target="_blank" rel="noopener">فتح موقع المتبرع على الخريطة ⌖</a>` : `<span class="location-missing">موقع المتبرع غير مسجل</span>`;
     const locationLinks = `<div class="donation-location-actions">${donorLink}</div>`;
     const imageData = String(request.imageData || "");
-    const imagePreview = /^data:image\//i.test(imageData) ? `<div class="donation-image-preview"><img src="${imageData}" alt="صورة الدواء المرسل من المتبرع" loading="lazy"><a href="${imageData}" target="_blank" rel="noopener">فتح صورة الدواء</a></div>` : "";
+    const imagePreview = /^data:image\//i.test(imageData) ? `<div class="donation-image-preview"><img src="${imageData}" alt="صورة الدواء المرسل من المتبرع" loading="lazy"><button type="button" class="donation-image-open" data-donation-image="${escapeHtml(imageData)}">فتح الصورة</button></div>` : "";
     return `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>👤 المتبرع: ${escapeHtml(request.donorName || "غير مسجل")}</span><span>🪪 الرقم القومي: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div>${imagePreview}${locationLinks}<div class="donation-request-actions">` + `${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`;
   }).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
   content.innerHTML = `${pageHeading("طلبات التبرع بالأدوية", "راجع طلبات المرضى وحدد ما يمكن للصيدلية استقباله.", "خدمة المجتمع")}<div class="donation-dashboard-note"><strong>تنبيه مهم:</strong><span>تأكد من صلاحية الدواء وسلامة العبوة قبل القبول، وتواصل مع المتبرع خارج الموقع لتنسيق التسليم.</span></div><section class="donation-request-grid" id="donation-request-results">${cards}</section>`;
@@ -455,12 +456,13 @@ function alertSignature(records) {
   return stockAlertRecords(records).map((record) => `${record["م"]}:${record["اسم الدواء"]}:${getStockState(record)}:${record["الكمية الحالية"] ?? record["الكمية"]}`).sort().join("|");
 }
 function renderStockAlertPanel(records = getSupply()) {
-  const alerts = stockAlertRecords(records);
+  const alerts = stockAlertRecords(records).slice(0, 10);
+  try { if (state.alertSignature && sessionStorage.getItem("dawaey-alerts-ack") === state.alertSignature) state.alertsAcknowledged = true; } catch { /* Ignore storage restrictions. */ }
   const count = document.querySelector("#stock-alert-count");
   const panel = document.querySelector("#stock-alert-panel");
   const button = document.querySelector("#stock-alert-button");
-  if (count) count.textContent = formatNumber(alerts.length);
-  if (button) button.classList.toggle("has-alerts", alerts.length > 0);
+  if (count) count.textContent = formatNumber(state.alertsAcknowledged ? 0 : alerts.length);
+  if (button) button.classList.toggle("has-alerts", alerts.length > 0 && !state.alertsAcknowledged);
   if (!panel) return;
   const danger = alerts.filter((record) => getStockState(record) === "out");
   const warning = alerts.filter((record) => getStockState(record) === "low");
@@ -474,6 +476,8 @@ async function refreshStockAlerts() {
     const latestSupply = latest.sheets?.[SHEET_NAMES.supply] ?? [];
     const latestSignature = alertSignature(latestSupply);
     if (state.alertSignature && state.alertSignature !== latestSignature) {
+      state.alertsAcknowledged = false;
+      try { sessionStorage.removeItem("dawaey-alerts-ack"); } catch { /* Ignore storage restrictions. */ }
       const newlyAtRisk = stockAlertRecords(latestSupply).filter((record) => !stockAlertRecords(getSupply()).some((old) => String(old["م"]) === String(record["م"]) && getStockState(old) === getStockState(record)));
       showToast(newlyAtRisk.length ? `تنبيه مخزون: ${newlyAtRisk[0]["اسم الدواء"]} وصل لحالة خطر` : "تم تحديث حالة المخزون");
       if ("Notification" in window && Notification.permission === "granted") new Notification("تنبيه مخزون دوائي", { body: newlyAtRisk.length ? `${newlyAtRisk[0]["اسم الدواء"]} يحتاج مراجعة فورية.` : "تم تحديث حالة أحد الأصناف." });
@@ -572,6 +576,20 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const imageButton = event.target.closest("[data-donation-image]");
+  if (imageButton) {
+    let dialog = document.querySelector("#donation-image-dialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "donation-image-dialog";
+      dialog.innerHTML = `<button type="button" class="donation-image-close" aria-label="إغلاق">×</button><img alt="صورة التبرع">`;
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", (click) => { if (click.target === dialog || click.target.closest(".donation-image-close")) dialog.close(); });
+    }
+    dialog.querySelector("img").src = imageButton.dataset.donationImage;
+    dialog.showModal();
+    return;
+  }
   const donationAction = event.target.closest("[data-donation-action]");
   if (donationAction) {
     const request = getDonationRequests().find((item) => item.id === donationAction.dataset.donationId);
@@ -591,7 +609,7 @@ document.addEventListener("click", (event) => {
     const panel = document.querySelector("#stock-alert-panel");
     const button = document.querySelector("#stock-alert-button");
     const open = panel?.hasAttribute("hidden");
-    if (open) { renderStockAlertPanel(); panel.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); const count = document.querySelector("#stock-alert-count"); if (count) count.textContent = "0"; button?.classList.remove("has-alerts"); }
+    if (open) { state.alertsAcknowledged = true; try { sessionStorage.setItem("dawaey-alerts-ack", state.alertSignature); } catch { /* Ignore storage restrictions. */ } renderStockAlertPanel(); panel.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
     return;
   }
@@ -632,7 +650,7 @@ document.addEventListener("click", (event) => {
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         state.pharmacyCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacies near ${coords.latitude},${coords.longitude}`)}`;
         if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
         const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=6000`, { credentials: "same-origin" });
         const payload = await response.json();

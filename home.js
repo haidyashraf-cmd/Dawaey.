@@ -355,14 +355,8 @@ function renderNotifications() {
 
 async function loadPatientData() {
   const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" }), fetch("/api/donations", { credentials: "same-origin" })]);
-  if (savedResponse.ok) {
-    const savedPayload = await savedResponse.json();
-    const serverSaved = new Set((savedPayload.medicineKeys || []).map(String));
-    let localSaved = new Set();
-    try { localSaved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String)); } catch { /* The server list remains available. */ }
-    state.saved = new Set([...serverSaved, ...localSaved]);
-    for (const key of localSaved) if (!serverSaved.has(key)) persistSavedMedicine(key, true).catch(() => {});
-  }
+  state.saved = new Set();
+  try { localStorage.removeItem("dawaey-saved-medications"); } catch { /* Ignore storage restrictions. */ }
   if (notificationsResponse.ok) {
     const notificationPayload = await notificationsResponse.json();
     state.notifications = notificationPayload.notifications || [];
@@ -448,7 +442,7 @@ function performSearch(query) {
   resultsSection.hidden = false;
   suggestionList.hidden = true;
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  if (state.areaQuery) {
+  if (state.areaQuery && state.areaFromGps) {
     loadExternalPharmacies(state.areaQuery, state.userCoordinates).then(() => { renderAreaResults(state.areaQuery); renderMedicineResults(); });
   }
 }
@@ -831,7 +825,7 @@ function setupEvents() {
         state.areaQuery = area;
         state.areaFromGps = true;
         state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const patientMapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        const patientMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacies near ${coords.latitude},${coords.longitude}`)}`;
         if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.href = patientMapUrl;
         document.querySelector("#area-search").value = area;
         const mapPanel = document.querySelector(".search-workspace .map-panel");
@@ -839,8 +833,6 @@ function setupEvents() {
           mapPanel.dataset.latitude = String(coords.latitude);
           mapPanel.dataset.longitude = String(coords.longitude);
           mapPanel.classList.add("has-user-location");
-          mapPanel.querySelector(".user-map-link")?.remove();
-          mapPanel.insertAdjacentHTML("beforeend", `<a class="user-map-link" href="${patientMapUrl}" target="_blank" rel="noopener">فتح خريطة موقعي والصيدليات القريبة ⌖</a>`);
         }
         await loadExternalPharmacies(area, { latitude: coords.latitude, longitude: coords.longitude });
         renderAreaResults(area);

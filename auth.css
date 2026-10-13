@@ -332,3 +332,8 @@ body { background: radial-gradient(circle at 12% 0%, rgba(0,191,166,.22), transp
 .gps-button { width: 44px; flex: 0 0 44px; border: 1px solid rgba(21,102,116,.25); border-radius: 12px; color: #156674; background: #fff; cursor: pointer; font-size: 21px; }
 
 #pharmacy-register-gps{grid-column:1/-1;justify-content:center;min-height:38px}.gps-directory-button{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid #00bfa6;border-radius:8px;background:#d9fbf4;color:#007f78;cursor:pointer;font:inherit;font-size:10px;font-weight:800}
+
+/* Dependent governorate and district selectors */
+.field > select { width: 100%; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid #c9d8e4; border-radius: 8px; background: var(--surface, #fff); color: var(--ink, #102a43); font-size: 12px; font-weight: 500; }
+.field > select:focus { border-color: #00bfa6; outline: 0; box-shadow: 0 0 0 3px rgba(0,191,166,.14); }
+.field > select:disabled { color: #92a1a0; background: #f3f7f8; cursor: not-allowed; }

@@ -14,7 +14,6 @@ import sys
 import threading
 import time
 import urllib.parse
-from datetime import date
 from contextlib import closing
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -34,18 +33,8 @@ OAUTH_STATE_COOKIE = "dawaey_google_state"
 OAUTH_STATE_SECONDS = 600
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
-EGYPT_GOVERNORATE_CODES = {"01", "02", "03", "04", "11", "12", "13", "14", "15", "16", "17", "18", "19", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "32", "33", "34", "35", "88"}
-
-
 def valid_egyptian_national_id(value: str) -> bool:
-    if not re.fullmatch(r"\d{14}", value) or value[0] not in {"2", "3"}:
-        return False
-    try:
-        century = 1900 if value[0] == "2" else 2000
-        date(century + int(value[1:3]), int(value[3:5]), int(value[5:7]))
-    except ValueError:
-        return False
-    return value[7:9] in EGYPT_GOVERNORATE_CODES
+    return bool(re.fullmatch(r"\d{14}", value))
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
@@ -790,7 +779,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if unit not in {"علبة", "شريط", "شراب", "قلم", "أنبوبة مرهم", "أمبول", "بخاخ"}:
             raise ValueError("اختار نوع العبوة من القائمة.")
         if not valid_egyptian_national_id(national_id):
-            raise ValueError("اكتب رقم قومي مصري صحيح: 14 رقمًا، وتاريخ ميلاد ومحافظة صحيحة.")
+            raise ValueError("الرقم القومي لازم يكون 14 رقمًا بالضبط.")
         now = int(time.time())
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()

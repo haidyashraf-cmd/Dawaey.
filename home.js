@@ -9,15 +9,7 @@ const aliases = new Map([
   ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"],
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
-const EGYPT_GOVERNORATE_CODES = new Set(["01", "02", "03", "04", "11", "12", "13", "14", "15", "16", "17", "18", "19", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "32", "33", "34", "35", "88"]);
-function validEgyptianNationalId(value) {
-  if (!/^\d{14}$/.test(value) || !["2", "3"].includes(value[0])) return false;
-  const year = Number(value.slice(1, 3)) + (value[0] === "2" ? 1900 : 2000);
-  const month = Number(value.slice(3, 5));
-  const day = Number(value.slice(5, 7));
-  const parsed = new Date(year, month - 1, day);
-  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day && EGYPT_GOVERNORATE_CODES.has(value.slice(7, 9));
-}
+function validEgyptianNationalId(value) { return /^\d{14}$/.test(value); }
 
 const searchInput = document.querySelector("#medicine-search");
 const suggestionList = document.querySelector("#search-suggestions");
@@ -551,7 +543,7 @@ function setupDonationAndAssistant() {
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
-    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا، وتاريخ ميلاد ومحافظة صحيحة."); return; }
+    if (!validEgyptianNationalId(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقمًا بالضبط."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
     loadExternalPharmacies(area, latitude && longitude ? { latitude, longitude } : null).then(() => renderDonationResults(rows[0].medicine, area));

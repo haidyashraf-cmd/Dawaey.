@@ -314,6 +314,7 @@ function renderPharmacies() {
   content.innerHTML = `
     ${pageHeading("دليل الصيدليات", "ابحث باسم الصيدلية أو أي محافظة أو مكان، أو استخدم GPS لإظهار الصيدليات القريبة من موقعك.", "شبكة الصيدليات")}
     <div class="toolbar"><label class="inline-search">${searchIcon()}<input id="pharmacy-search" type="search" value="${escapeHtml(state.pharmacyQuery)}" placeholder="اسم الصيدلية، المحافظة، المنطقة، أو رقم الهاتف" autocomplete="off" aria-label="ابحث في دليل الصيدليات"></label><button type="button" class="gps-directory-button" id="pharmacy-gps"><span aria-hidden="true">⌖</span> استخدم GPS للصيدليات القريبة</button><span class="toolbar-meta" id="pharmacy-count"></span></div>
+    <div id="pharmacy-location-map" class="pharmacy-location-map" ${state.pharmacyCoordinates ? "" : "hidden"}>${state.pharmacyCoordinates ? `<a href="https://www.google.com/maps/search/pharmacies/@${state.pharmacyCoordinates.latitude},${state.pharmacyCoordinates.longitude},15z" target="_blank" rel="noopener">فتح خريطة الصيدليات القريبة من موقعي ⌖</a><small>تم تحديد موقعك: ${state.pharmacyCoordinates.latitude.toFixed(5)}, ${state.pharmacyCoordinates.longitude.toFixed(5)}</small>` : ""}</div>
     <section class="pharmacy-grid" id="pharmacy-results" aria-live="polite"></section>
     <p class="pharmacy-disclaimer">النتائج تجمع بيانات الدليل مع الصيدليات القريبة من OpenStreetMap. اتصل للتأكد من الرقم والتوفر.</p>
   `;
@@ -374,11 +375,8 @@ function renderDonations() {
   const cards = requests.length ? requests.map((request) => {
     const donorLat = Number(request.latitude), donorLon = Number(request.longitude);
     const donorMap = Number.isFinite(donorLat) && Number.isFinite(donorLon) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donorLat},${donorLon}`)}` : "";
-    const pharmacyLocation = request.pharmacyLocation || {};
-    const pharmacyMap = pharmacyLocation.locationUrl || (Number.isFinite(Number(pharmacyLocation.latitude)) && Number.isFinite(Number(pharmacyLocation.longitude)) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pharmacyLocation.latitude},${pharmacyLocation.longitude}`)}` : "");
     const donorLink = donorMap ? `<a class="donor-map-link" href="${donorMap}" target="_blank" rel="noopener">فتح موقع المتبرع على الخريطة ⌖</a>` : `<span class="location-missing">موقع المتبرع غير مسجل</span>`;
-    const pharmacyLink = pharmacyMap ? `<a class="pharmacy-map-link" href="${pharmacyMap}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ⌖</a>` : "";
-    const locationLinks = donorMap || pharmacyMap ? `<div class="donation-location-actions">${donorLink}${pharmacyLink}</div>` : "";
+    const locationLinks = `<div class="donation-location-actions">${donorLink}</div>`;
     return `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>👤 المتبرع: ${escapeHtml(request.donorName || "غير مسجل")}</span><span>🪪 الرقم القومي: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div>${locationLinks}<div class="donation-request-actions">` + `${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`;
   }).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
   content.innerHTML = `${pageHeading("طلبات التبرع بالأدوية", "راجع طلبات المرضى وحدد ما يمكن للصيدلية استقباله.", "خدمة المجتمع")}<div class="donation-dashboard-note"><strong>تنبيه مهم:</strong><span>تأكد من صلاحية الدواء وسلامة العبوة قبل القبول، وتواصل مع المتبرع خارج الموقع لتنسيق التسليم.</span></div><section class="donation-request-grid" id="donation-request-results">${cards}</section>`;
@@ -633,9 +631,10 @@ document.addEventListener("click", (event) => {
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
+        state.pharmacyCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
         const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
         if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
-        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=10000`, { credentials: "same-origin" });
+        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=6000`, { credentials: "same-origin" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "تعذر تحميل الصيدليات القريبة.");
         state.externalPharmacies = (payload.pharmacies || []).filter((pharmacy) => String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => { const name = String(pharmacy["اسم الصيدلية"] || pharmacy.name || "").trim().toLocaleLowerCase().replace(/\s+/g, " "); return name === term || name.includes(term); }));

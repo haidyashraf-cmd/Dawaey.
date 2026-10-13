@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [] };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [], userCoordinates: null };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -26,6 +26,24 @@ function readDonationImage(file) {
     reader.onerror = () => resolve("");
     reader.onload = () => resolve(String(reader.result || ""));
     reader.readAsDataURL(file);
+  });
+}
+function prepareDonationImage(file) {
+  if (!file) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, 1400 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); resolve(""); };
+    image.src = url;
   });
 }
 
@@ -114,7 +132,12 @@ async function searchFromPhoto(file) {
     const result = await Tesseract.recognize(image, "eng+ara", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
     const filenameText = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
-    const candidate = findMedicineFromText(`${text} ${filenameText}`);
+    const allText = normalize(`${text} ${filenameText}`);
+    const exact = getRecords().filter((record) => {
+      const name = normalize(record["اسم الدواء"]);
+      return name.length > 2 && (allText.includes(name) || name.split(" ").filter((word) => word.length > 2).every((word) => allText.includes(word)));
+    }).sort((left, right) => String(right["اسم الدواء"]).length - String(left["اسم الدواء"]).length)[0];
+    const candidate = exact || findMedicineFromText(`${text} ${filenameText}`);
     if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
   } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
@@ -425,6 +448,9 @@ function performSearch(query) {
   resultsSection.hidden = false;
   suggestionList.hidden = true;
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (state.areaQuery) {
+    loadExternalPharmacies(state.areaQuery, state.userCoordinates).then(() => { renderAreaResults(state.areaQuery); renderMedicineResults(); });
+  }
 }
 
 function renderMedicineResults() {
@@ -666,7 +692,7 @@ function setupDonationAndAssistant() {
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
     const imageFile = document.querySelector("#donation-image")?.files?.[0];
-    const imageData = await readDonationImage(imageFile);
+    const imageData = await prepareDonationImage(imageFile);
     if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا، تاريخ ميلاد صحيح ويبدأ بـ 2 أو 3."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
@@ -800,6 +826,7 @@ function setupEvents() {
         const areaPayload = await areaResponse.json().catch(() => ({}));
         const area = areaPayload.area || areaPayload.city || areaPayload.governorate || "بالقرب من موقعك";
         state.areaQuery = area;
+        state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
         document.querySelector("#area-search").value = area;
         const mapPanel = document.querySelector(".search-workspace .map-panel");
         if (mapPanel) {

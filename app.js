@@ -507,10 +507,16 @@ async function uploadPharmacyData(file) {
   const response = await fetch("/api/pharmacy/upload", { method: "POST", credentials: "same-origin", body: formData });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "تعذر رفع ملف الصيدلية.");
-  state.data = await loadDashboardData();
+  const loaded = await loadDashboardData();
+  const inventory = loaded.sheets?.[SHEET_NAMES.inventory] || [];
+  const supply = loaded.sheets?.[SHEET_NAMES.supply] || [];
+  if (!inventory.length && !supply.length) throw new Error("تم رفع الملف لكن لم يتم العثور على صفوف في ورقة المخزون أو التوريد. تأكد من وجود أسماء أعمدة وصفوف بيانات.");
+  state.data = loaded;
+  state.inventoryPage = 0;
+  state.inventoryCategory = "الكل";
+  state.inventoryFilter = "الكل";
   showView(state.view, false);
-  const counts = payload.counts || {};
-  showToast(`تم رفع الملف: ${payload.filename} · أصناف: ${counts.inventory || 0} · توريدات: ${counts.supply || 0}`);
+  showToast(`تم تحديث اللوحة · أصناف: ${inventory.length} · توريدات: ${supply.length}`);
 }
 
 async function startApp() {

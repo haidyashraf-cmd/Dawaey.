@@ -456,7 +456,8 @@ def parse_uploaded_rows(content, filename):
                 if any(value != "" for value in row.values()):
                     rows.append(row)
             if rows:
-                parsed[classify_uploaded_sheet(sheet.title, rows)] = clean_uploaded_rows(rows)
+                kind = classify_uploaded_sheet(sheet.title, rows)
+                parsed[kind] = parsed.get(kind, []) + clean_uploaded_rows(rows)
     elif suffix in {".csv", ".txt"}:
         text = None
         for encoding in ("utf-8-sig", "cp1256", "utf-8"):
@@ -1021,11 +1022,37 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 break
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
                 print(f"Overpass provider failed: {error}", file=sys.stderr)
-        if payload is None:
+        if payload is not None and not payload.get("elements"):
+            # An exact street geocode can land on a small map tile with no
+            # pharmacy nodes. Retry around the same point before declaring it
+            # empty, so a full address still returns nearby pharmacies.
+            wide_radius = min(max(radius * 2, 30000), 50000)
+            wide_query = f"[out:json][timeout:25];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
+            for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
+                try:
+                    wide_request = Request(endpoint, data=urllib.parse.urlencode({"data": wide_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+                    with urlopen(wide_request, timeout=28) as response:
+                        candidate = json.loads(response.read().decode("utf-8"))
+                    if candidate.get("elements"):
+                        payload = candidate
+                        break
+                except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                    print(f"Wide Overpass provider failed: {error}", file=sys.stderr)
+
+        if payload is None or not payload.get("elements"):
             # Nominatim is slower and returns fewer records, but keeps the search
             # useful when public Overpass instances are busy or unavailable.
-            fallback_query = urllib.parse.quote(f"pharmacy {area or 'Egypt'} Egypt")
-            fallback_url = f"https://nominatim.openstreetmap.org/search?format=jsonv2&limit=50&countrycodes=eg&addressdetails=1&accept-language=ar,en&q={fallback_query}"
+            fallback_parameters = urlencode({
+                "format": "jsonv2",
+                "limit": 50,
+                "countrycodes": "eg",
+                "addressdetails": 1,
+                "accept-language": "ar,en",
+                "q": "pharmacy",
+                "viewbox": f"{longitude - 0.15},{latitude + 0.15},{longitude + 0.15},{latitude - 0.15}",
+                "bounded": 1,
+            })
+            fallback_url = f"https://nominatim.openstreetmap.org/search?{fallback_parameters}"
             try:
                 with urlopen(Request(fallback_url, headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"}), timeout=20) as response:
                     fallback_places = json.loads(response.read().decode("utf-8"))
@@ -1034,6 +1061,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 print(f"Nominatim pharmacy fallback failed: {error}", file=sys.stderr)
                 self.send_json(503, {"error": "خدمة دليل الصيدليات غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
                 return
+
         pharmacies = []
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}

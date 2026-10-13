@@ -153,11 +153,17 @@ function simplifyArea(value) {
 function getNearbyPharmacies(query = state.areaQuery) {
   const normalizedQuery = simplifyArea(query);
   if (!normalizedQuery) return [];
-  return uniquePharmacies().filter((pharmacy) => {
+  const directoryMatches = uniquePharmacies().filter((pharmacy) => {
     const area = normalize(pharmacy["المنطقة / العنوان المتوقع"]);
     const segments = area.split(/\s*[-–/]\s*/).map(simplifyArea);
     return area.includes(normalize(query)) || segments.some((segment) => segment.includes(normalizedQuery) || normalizedQuery.includes(segment));
   });
+  // Remote results were already located by GPS/geocoding; do not hide them
+  // because a full street address is longer than the directory label.
+  if (state.externalPharmacies.length && query === state.areaQuery) {
+    return [...directoryMatches, ...state.externalPharmacies];
+  }
+  return directoryMatches;
 }
 
 function nearbyPharmacyMarkup(record) {

@@ -411,3 +411,18 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 .donation-card select { min-height:44px; width:100%; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); font:inherit; }
 
 .upload-file-button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border:1px solid var(--teal,#00a58f);border-radius:8px;background:#e8fffa;color:#007f78;cursor:pointer;font-size:11px;font-weight:800}.upload-file-button:hover{background:#00a58f;color:#fff}
+
+.language-toggle { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 10px; font-weight: 800; }
+[data-theme="dark"] .language-toggle { border-color: #47636a; background: #20363e; color: #e7f3ee; }
+
+/* Readable pharmacy dark mode: panels and tables follow the dark canvas. */
+[data-theme="dark"] body { background:#101827 !important; color:#e8f1f5 !important; }
+[data-theme="dark"] .topbar, [data-theme="dark"] .panel, [data-theme="dark"] .stat-card, [data-theme="dark"] .pharmacy-card, [data-theme="dark"] .donation-request-card, [data-theme="dark"] .report-summary-card { background:#1a2935 !important; border-color:#39515d !important; color:#e8f1f5 !important; }
+[data-theme="dark"] .welcome-panel { background:linear-gradient(135deg,#163b43,#213958) !important; }
+[data-theme="dark"] .welcome-search, [data-theme="dark"] .inline-search, [data-theme="dark"] .stock-alert-panel { background:#172630 !important; border-color:#45616d !important; color:#e8f1f5 !important; }
+[data-theme="dark"] input, [data-theme="dark"] select { background:#172630 !important; color:#e8f1f5 !important; border-color:#45616d !important; }
+[data-theme="dark"] .data-table th { background:#253d49 !important; color:#c9e0e4 !important; }
+[data-theme="dark"] .data-table td, [data-theme="dark"] .data-table tr { border-color:#344b56 !important; color:#dce9ec !important; }
+[data-theme="dark"] .data-table tbody tr:hover { background:#223c43 !important; }
+[data-theme="dark"] .stock-health-card, [data-theme="dark"] .stock-alert-item { background:#1a2935 !important; border-color:#39515d !important; }
+[data-theme="dark"] .panel-note, [data-theme="dark"] .report-disclaimer, [data-theme="dark"] .donation-dashboard-note { background:#283b42 !important; color:#c6d8d8 !important; }

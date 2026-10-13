@@ -474,7 +474,8 @@ def parse_uploaded_rows(content, filename):
         raise ValueError("ارفع ملف Excel بصيغة XLSX أو ملف CSV أو JSON.")
     if not parsed or not any(parsed.values()):
         raise ValueError("لم نقرأ أي أصناف من الملف. تأكد أن الصف الأول يحتوي أسماء الأعمدة وأن الملف يحتوي بيانات.")
-    return {"inventory": parsed.get("inventory", []), "supply": parsed.get("supply", []), "pharmacies": parsed.get("pharmacies", [])}
+    # The uploaded file never controls the pharmacy directory or donations.
+    return {"inventory": parsed.get("inventory", []), "supply": parsed.get("supply", []), "pharmacies": []}
 
 
 def read_uploaded_multipart(handler):
@@ -939,7 +940,12 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 return
             uploaded = connection.execute("SELECT filename, inventory_json, supply_json, pharmacies_json, uploaded_at FROM pharmacy_data_files WHERE account_id = ?", (account["id"],)).fetchone()
         if uploaded:
-            self.send_json(200, {"source": f"ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": json.loads(uploaded["inventory_json"]), "طلبات التوريد": json.loads(uploaded["supply_json"]), "بيانات الصيداليات": json.loads(uploaded["pharmacies_json"])}})
+            try:
+                published = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+                directory = published.get("sheets", {}).get("بيانات الصيداليات", [])
+            except (OSError, json.JSONDecodeError, AttributeError):
+                directory = []
+            self.send_json(200, {"source": f"المخزون والتوريد من ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": json.loads(uploaded["inventory_json"]), "طلبات التوريد": json.loads(uploaded["supply_json"]), "بيانات الصيداليات": directory}})
             return
         self.handle_bootstrap()
 

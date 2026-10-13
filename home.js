@@ -45,7 +45,15 @@ function renderMedicineInfo(record) {
 
 function loadOcrScript() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
-  return new Promise((resolve, reject) => { const script = document.createElement("script"); script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"; script.onload = () => resolve(window.Tesseract); script.onerror = reject; document.head.appendChild(script); });
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    const timer = window.setTimeout(() => reject(new Error("ocr-timeout")), 30000);
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.crossOrigin = "anonymous";
+    script.onload = () => { window.clearTimeout(timer); resolve(window.Tesseract); };
+    script.onerror = () => { window.clearTimeout(timer); reject(new Error("ocr-load")); };
+    document.head.appendChild(script);
+  });
 }
 
 function prepareMedicineImage(file) {
@@ -53,10 +61,11 @@ function prepareMedicineImage(file) {
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      const scale = Math.min(2.4, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
+      const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+      const scale = longestSide > 1800 ? 1800 / longestSide : 1;
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(900, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(900, Math.round(image.naturalHeight * scale));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
       const context = canvas.getContext("2d");
       context.fillStyle = "#fff";
       context.fillRect(0, 0, canvas.width, canvas.height);
@@ -93,9 +102,10 @@ async function searchFromPhoto(file) {
   try {
     const Tesseract = await loadOcrScript();
     const image = await prepareMedicineImage(file);
-    const result = await Tesseract.recognize(image, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
+    const result = await Tesseract.recognize(image, "eng+ara", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
-    const candidate = findMedicineFromText(text);
+    const filenameText = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    const candidate = findMedicineFromText(`${text} ${filenameText}`);
     if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
   } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }

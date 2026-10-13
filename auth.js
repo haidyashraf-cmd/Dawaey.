@@ -1,4 +1,5 @@
 const state = { role: "patient", mode: "login", busy: false };
+const LOCATION_DATA = {"القاهرة": ["مدينة نصر", "مصر الجديدة", "المعادي", "حلوان", "الزمالك", "المطرية", "عين شمس", "المرج", "شبرا", "السيدة زينب", "الخليفة", "البساتين", "دار السلام", "السلام", "النزهة", "الوايلي", "حدائق القبة", "منشأة ناصر"], "الجيزة": ["الدقي", "العجوزة", "المهندسين", "الهرم", "فيصل", "العمرانية", "بولاق الدكرور", "إمبابة", "الوراق", "6 أكتوبر", "الشيخ زايد", "الحوامدية", "أبو النمرس", "البدرشين", "العياط", "أوسيم", "كرداسة", "الصف", "أطفيح", "الواحات البحرية"], "الإسكندرية": ["المنتزه", "شرق الإسكندرية", "وسط الإسكندرية", "الجمرك", "غرب الإسكندرية", "العجمي", "العامرية", "برج العرب", "سيدي جابر", "محرم بك", "الرمل"], "القليوبية": ["بنها", "شبرا الخيمة", "القناطر الخيرية", "الخانكة", "الخصوص", "العبور", "قليوب", "طوخ", "شبين القناطر", "كفر شكر"], "الدقهلية": ["المنصورة", "طلخا", "ميت غمر", "دكرنس", "منية النصر", "السنبلاوين", "أجا", "شربين", "بلقاس", "جمصة", "المطرية", "منزلة النصر"], "الشرقية": ["الزقازيق", "العاشر من رمضان", "بلبيس", "منيا القمح", "فاقوس", "أبو كبير", "كفر صقر", "الحسينية", "ههيا", "الإبراهيمية", "أولاد صقر", "مشتول السوق"], "الغربية": ["طنطا", "المحلة الكبرى", "كفر الزيات", "زفتى", "السنطة", "سمنود", "قطور", "بسيون"], "البحيرة": ["دمنهور", "كفر الدوار", "رشيد", "إدكو", "أبو المطامير", "أبو حمص", "حوش عيسى", "الدلنجات", "المحمودية", "إيتاي البارود", "كوم حمادة", "وادي النطرون", "شبراخيت"], "كفر الشيخ": ["كفر الشيخ", "دسوق", "فوه", "مطوبس", "قلين", "سيدي سالم", "الحامول", "بلطيم", "الرياض", "بيلا", "البرلس"], "دمياط": ["دمياط", "دمياط الجديدة", "رأس البر", "فارسكور", "الزرقا", "كفر سعد", "كفر البطيخ", "السرو"], "بورسعيد": ["حي الشرق", "حي العرب", "حي المناخ", "حي الضواحي", "حي الزهور", "حي الجنوب", "بورفؤاد"], "الإسماعيلية": ["الإسماعيلية", "فايد", "القنطرة شرق", "القنطرة غرب", "التل الكبير", "أبو صوير", "القصاصين الجديدة"], "السويس": ["حي السويس", "حي الأربعين", "حي عتاقة", "حي فيصل", "حي الجناين"], "شمال سيناء": ["العريش", "بئر العبد", "الشيخ زويد", "رفح", "الحسنة", "نخل"], "جنوب سيناء": ["الطور", "شرم الشيخ", "دهب", "نويبع", "طابا", "سانت كاترين", "رأس سدر", "أبو رديس", "أبو زنيمة"], "بني سويف": ["بني سويف", "الواسطي", "ناصر", "إهناسيا", "ببا", "الفشن", "سمسطا"], "الفيوم": ["الفيوم", "سنورس", "إطسا", "طامية", "أبشواي", "يوسف الصديق"], "المنيا": ["المنيا", "ملوي", "مغاغة", "بني مزار", "سمالوط", "أبو قرقاص", "مطاي", "العدوة", "دير مواس"], "أسيوط": ["أسيوط", "ديروط", "القوصية", "منفلوط", "أبنوب", "الفتح", "أبو تيج", "الغنايم", "ساحل سليم", "البداري", "صدفا"], "سوهاج": ["سوهاج", "أخميم", "جرجا", "البلينا", "طهطا", "المراغة", "المنشأة", "دار السلام", "جهينة", "ساقلتة"], "قنا": ["قنا", "نجع حمادي", "دشنا", "قفط", "قوص", "نقادة", "فرشوط", "أبو تشت", "الوقف"], "الأقصر": ["الأقصر", "إسنا", "أرمنت", "القرنة", "البياضية", "الزينية", "الطود"], "أسوان": ["أسوان", "كوم أمبو", "إدفو", "دراو", "نصر النوبة", "أبو سمبل"], "البحر الأحمر": ["الغردقة", "رأس غارب", "سفاجا", "القصير", "مرسى علم", "الشلاتين", "حلايب"], "الوادي الجديد": ["الخارجة", "الداخلة", "الفرافرة", "باريس", "بلاط"], "مطروح": ["مرسى مطروح", "الحمام", "العلمين", "الضبعة", "النجيلة", "سيدي براني", "السلوم", "سيوة"], "المنوفية": ["شبين الكوم", "منوف", "السادات", "أشمون", "الباجور", "تلا", "بركة السبع", "قويسنا", "الشهداء", "سرس الليان"]};
 const form = document.querySelector("#account-form");
 const message = document.querySelector("#form-message");
 const submitButton = document.querySelector("#submit-button");
@@ -77,14 +78,24 @@ function updatePasswordStrength() {
   panel.querySelector("small").textContent = labels[score];
 }
 
-function fillLocationSuggestions(pharmacies) {
-  const addresses = [...new Set(pharmacies.map((record) => String(record["المنطقة / العنوان المتوقع"] ?? "").trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
-  const districts = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/).at(-1).trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
-  const governorates = [...new Set(addresses.map((address) => address.split(/\s*[-–/]\s*/)[0].replace(/^محافظة\s*/, "").trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "ar"));
-  document.querySelector("#district-options").innerHTML = districts.map((district) => `<option value="${escapeHtml(district)}"></option>`).join("");
-  document.querySelector("#governorate-options").innerHTML = governorates.map((governorate) => `<option value="${escapeHtml(governorate)}"></option>`).join("");
+function fillLocationSuggestions() {
+  const governorates = Object.keys(LOCATION_DATA);
+  document.querySelectorAll("[data-location-governorate]").forEach((select) => {
+    const current = select.value;
+    select.innerHTML = `<option value="">اختار المحافظة</option>${governorates.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+    if (governorates.includes(current)) select.value = current;
+  });
+  document.querySelectorAll("[data-location-governorate]").forEach((governorateSelect) => {
+    const districtSelect = governorateSelect.closest(".role-fields")?.querySelector("[data-location-district]");
+    const updateDistricts = () => {
+      const districts = LOCATION_DATA[governorateSelect.value] || [];
+      districtSelect.innerHTML = `<option value="">اختار المنطقة</option>${districts.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+      districtSelect.disabled = !districts.length;
+    };
+    governorateSelect.addEventListener("change", updateDistricts);
+    updateDistricts();
+  });
 }
-
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
@@ -192,6 +203,7 @@ form.addEventListener("submit", async (event) => {
         whatsapp: String(formData.get("whatsapp") ?? "").trim(),
         latitude: String(formData.get("pharmacyLatitude") ?? "").trim(),
         longitude: String(formData.get("pharmacyLongitude") ?? "").trim(),
+        locationUrl: String(formData.get("pharmacyLocationUrl") ?? "").trim(),
       });
     }
   }
@@ -260,7 +272,7 @@ async function initializeAuth() {
   if (errorMessage) setMessage(errorMessage);
   try {
     const [bootstrap, session] = await Promise.all([requestApi("bootstrap"), requestApi("session")]);
-    fillLocationSuggestions(bootstrap.pharmacies ?? []);
+    fillLocationSuggestions();
     if (session.user) showAccount(session.user);
   } catch {
     setMessage("خدمة الحسابات مش شغالة. افتح الموقع من الخادم المحلي بعد تشغيله.");
@@ -272,7 +284,8 @@ document.querySelector("#pharmacy-register-gps")?.addEventListener("click", () =
   navigator.geolocation.getCurrentPosition(async ({ coords }) => {
     form.elements.pharmacyLatitude.value = coords.latitude;
     form.elements.pharmacyLongitude.value = coords.longitude;
-    try { const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`); const payload = await response.json(); if (payload.area) form.elements.pharmacyDistrict.value = payload.area; } catch { /* coordinates are still saved */ }
+    form.elements.pharmacyLocationUrl.value = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
+    try { const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`); const payload = await response.json(); if (payload.area) { const district = form.elements.pharmacyDistrict; if (![...district.options].some((option) => option.value === payload.area)) district.add(new Option(payload.area, payload.area)); district.value = payload.area; } } catch { /* coordinates are still saved */ }
     setMessage("تم تحديد موقع الصيدلية بالـ GPS.", "success");
   }, () => setMessage("الموقع غير متاح؛ اكتب المنطقة يدويًا."), { timeout: 10000, maximumAge: 60000 });
 });

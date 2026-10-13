@@ -43,8 +43,8 @@
             <label class="field"><span id="contact-label">الموبايل أو البريد الإلكتروني</span><input name="contact" type="text" inputmode="text" autocomplete="username" placeholder="01xxxxxxxxx أو name@email.com" required></label>
 
             <div class="role-fields patient-fields" data-role-fields="patient" data-register-only hidden>
-              <label class="field"><span>المحافظة</span><input name="patientGovernorate" type="text" list="governorate-options" autocomplete="address-level1" placeholder="مثال: القاهرة" data-required><datalist id="governorate-options"></datalist></label>
-              <label class="field"><span>المنطقة</span><input name="patientDistrict" type="text" list="district-options" autocomplete="address-level2" placeholder="مثال: المعادي" data-required><datalist id="district-options"></datalist></label>
+              <label class="field"><span>المحافظة</span><select name="patientGovernorate" data-location-governorate autocomplete="address-level1" data-required><option value="">اختار المحافظة</option></select></label>
+              <label class="field"><span>المنطقة</span><select name="patientDistrict" data-location-district autocomplete="address-level2" data-required disabled><option value="">اختار المحافظة أولًا</option></select></label>
             </div>
 
             <div class="role-fields pharmacy-fields" data-role-fields="pharmacy" data-register-only hidden>
@@ -52,11 +52,11 @@
               <label class="field"><span>اسم الصيدلي المسؤول</span><input name="pharmacistName" type="text" autocomplete="name" data-required></label>
               <label class="field"><span>رقم الترخيص أو السجل</span><input name="licenseNumber" type="text" maxlength="64" data-required></label>
               <label class="field field-wide"><span>العنوان بالتفصيل</span><input name="address" type="text" maxlength="240" autocomplete="street-address" placeholder="الشارع، رقم العقار، علامة مميزة" data-required></label>
-              <label class="field"><span>المحافظة</span><input name="pharmacyGovernorate" type="text" list="governorate-options" autocomplete="address-level1" data-required></label>
-              <label class="field"><span>المنطقة</span><input name="pharmacyDistrict" type="text" list="district-options" autocomplete="address-level2" data-required></label><button type="button" class="gps-directory-button" id="pharmacy-register-gps">⌖ استخدم GPS لموقع الصيدلية</button><input name="pharmacyLatitude" id="pharmacy-latitude" type="hidden"><input name="pharmacyLongitude" id="pharmacy-longitude" type="hidden">
+              <label class="field"><span>المحافظة</span><select name="pharmacyGovernorate" data-location-governorate autocomplete="address-level1" data-required><option value="">اختار المحافظة</option></select></label>
+              <label class="field"><span>المنطقة</span><select name="pharmacyDistrict" data-location-district autocomplete="address-level2" data-required disabled><option value="">اختار المحافظة أولًا</option></select></label><button type="button" class="gps-directory-button" id="pharmacy-register-gps">⌖ استخدم GPS لموقع الصيدلية</button><label class="field field-wide"><span>رابط موقع الصيدلية على الخريطة</span><input name="pharmacyLocationUrl" id="pharmacy-location-url" type="url" readonly placeholder="اضغط على زر GPS لإظهار الرابط الكامل"></label><input name="pharmacyLatitude" id="pharmacy-latitude" type="hidden"><input name="pharmacyLongitude" id="pharmacy-longitude" type="hidden">
               <label class="field"><span>مواعيد العمل</span><input name="openingHours" type="text" placeholder="يوميًا من ٩ صباحًا لـ ١٢ مساءً" data-required></label>
               <label class="field"><span>رقم واتساب</span><input name="whatsapp" type="tel" inputmode="tel" placeholder="01xxxxxxxxx" data-required></label>
-              <p class="form-note field-wide">عنوان الفرع يتسجل للمراجعة؛ الإحداثيات ومشاركة الموقع مش متاحة في المصدر الحالي.</p>
+              <p class="form-note field-wide">اضغط GPS لإضافة رابط Google Maps الكامل إلى طلب تسجيل الصيدلية.</p>
             </div>
 
             <label class="field"><span>كلمة المرور</span><span class="password-wrap"><input name="password" type="password" autocomplete="current-password" minlength="8" required><button class="password-toggle" type="button" aria-label="إظهار كلمة المرور">إظهار</button></span></label>

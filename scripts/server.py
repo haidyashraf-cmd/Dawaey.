@@ -76,6 +76,7 @@ def initialize_database() -> None:
                 whatsapp TEXT NOT NULL,
                 latitude REAL,
                 longitude REAL,
+                location_url TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected'))
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -140,6 +141,8 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
         if "longitude" not in pharmacy_columns:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN longitude REAL")
+        if "location_url" not in pharmacy_columns:
+            connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN location_url TEXT NOT NULL DEFAULT ''")
 
 
 def normalize_contact(value: object) -> tuple[str, str]:
@@ -181,13 +184,14 @@ def send_telegram_notification(account_id: int, details: dict) -> None:
     missing = [name for name, value in (("TELEGRAM_BOT_TOKEN", token), ("TELEGRAM_CHAT_ID", chat_id)) if not value]
     if missing:
         raise RuntimeError(f"Telegram configuration is missing: {', '.join(missing)}")
+    location = f"\nرابط الموقع: {details['locationUrl']}" if details.get("locationUrl") else ""
     text = ("طلب تسجيل صيدلية جديد\n\n"
             f"الصيدلية: {details['pharmacyName']}\n"
             f"المسؤول: {details['pharmacistName']}\n"
             f"الهاتف: {details['contact']}\n"
             f"المنطقة: {details['district']}\n"
             f"الترخيص: {details['licenseNumber']}\n"
-            f"العنوان: {details['address']}")
+            f"العنوان: {details['address']}" + location)
     payload = {"chat_id": chat_id, "text": text, "reply_markup": {"inline_keyboard": [[
         {"text": "قبول", "callback_data": f"pharmacy:approve:{account_id}"},
         {"text": "رفض", "callback_data": f"pharmacy:reject:{account_id}"},
@@ -205,7 +209,7 @@ def send_whatsapp_notification(account_id: int, details: dict) -> None:
     if recipient.startswith("0"):
         recipient = "20" + recipient[1:]
     payload = {"messaging_product": "whatsapp", "to": recipient, "type": "interactive", "interactive": {
-        "type": "button", "body": {"text": f"طلب تسجيل صيدلية جديد: {details['pharmacyName']}\nالمسؤول: {details['pharmacistName']}\nالهاتف: {details['contact']}\nالمنطقة: {details['district']}"},
+        "type": "button", "body": {"text": f"طلب تسجيل صيدلية جديد: {details['pharmacyName']}\nالمسؤول: {details['pharmacistName']}\nالهاتف: {details['contact']}\nالمنطقة: {details['district']}\nرابط الموقع: {details.get('locationUrl') or 'غير متاح'}"},
         "action": {"buttons": [
             {"type": "reply", "reply": {"id": f"pharmacy:approve:{account_id}", "title": "قبول"}},
             {"type": "reply", "reply": {"id": f"pharmacy:reject:{account_id}", "title": "رفض"}},
@@ -1149,6 +1153,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             district = str(payload.get("district", "")).strip()
             opening_hours = str(payload.get("openingHours", "")).strip()
             whatsapp = str(payload.get("whatsapp", "")).strip()
+            location_url = str(payload.get("locationUrl", "")).strip()
             try:
                 latitude = float(payload.get("latitude")) if payload.get("latitude") not in (None, "") else None
                 longitude = float(payload.get("longitude")) if payload.get("longitude") not in (None, "") else None
@@ -1159,10 +1164,10 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             if len(license_number) > 64 or len(pharmacy_name) > 120 or len(address) > 240:
                 raise ValueError("راجع طول بيانات الصيدلية.")
             connection.execute(
-                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude),
+                "INSERT INTO pharmacy_applications(account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude, location_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (account_id, pharmacy_name, pharmacist_name, license_number, address, district, opening_hours, whatsapp, latitude, longitude, location_url),
             )
-        telegram_sent = notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact})
+        telegram_sent = notify_pharmacy_application(account_id, {"pharmacyName": pharmacy_name, "pharmacistName": pharmacist_name, "licenseNumber": license_number, "address": address, "district": district, "contact": contact, "locationUrl": location_url})
         message = "تم حفظ طلب الصيدلية وإرسال إشعار المراجعة." if telegram_sent else "تم حفظ طلب الصيدلية، لكن تعذر إرسال إشعار تيليجرام. راجع إعدادات Telegram في Railway."
         self.send_json(202, {"status": "pending", "telegramSent": telegram_sent, "message": message})
 

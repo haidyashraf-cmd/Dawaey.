@@ -421,3 +421,15 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
   .topbar-actions { flex-wrap: wrap; }
   .table-wrap, .consumption-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* Pharmacy dark mode parity: apply the dark surface to every dashboard panel. */
+[data-theme="dark"] body { background: #0f1724 !important; color: #e8f1f5 !important; }
+[data-theme="dark"] .topbar, [data-theme="dark"] .panel, [data-theme="dark"] .stat-card, [data-theme="dark"] .pharmacy-card, [data-theme="dark"] .donation-request-card, [data-theme="dark"] .report-summary-card, [data-theme="dark"] .stock-health-card { background: #1a2935 !important; border-color: #3b5562 !important; color: #e8f1f5 !important; }
+[data-theme="dark"] .welcome-panel { background: linear-gradient(135deg,#163b43,#243b5d) !important; }
+[data-theme="dark"] .welcome-panel h1, [data-theme="dark"] .welcome-panel h2, [data-theme="dark"] .panel h2, [data-theme="dark"] .panel h3, [data-theme="dark"] .stat-card strong, [data-theme="dark"] .pharmacy-card strong { color: #e8f1f5 !important; }
+[data-theme="dark"] .panel p, [data-theme="dark"] .panel small, [data-theme="dark"] .stat-card small, [data-theme="dark"] .pharmacy-card small { color: #a8bec4 !important; }
+[data-theme="dark"] .data-table th { background: #253d49 !important; color: #c9e0e4 !important; }
+[data-theme="dark"] .data-table td, [data-theme="dark"] .data-table tr { border-color: #344b56 !important; color: #dce9ec !important; }
+[data-theme="dark"] .data-table tbody tr:hover { background: #223c43 !important; }
+[data-theme="dark"] .sidebar { background: linear-gradient(180deg,#111833,#182653 65%,#12564f) !important; }
+[data-theme="dark"] .mobile-nav { background: #172630 !important; border-color: #3b5562 !important; }

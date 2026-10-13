@@ -903,3 +903,38 @@ body { background: var(--paper); color: var(--ink); }
   .header-emergency b { display: none; }
   .login-link { max-width: 120px; overflow: hidden; padding-inline: 8px; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* Reliable dark mode: the theme attribute is set on html by home.js. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #101b22;
+  --surface: #1b2b33;
+  --surface-soft: #223940;
+  --ink: #e7f2ef;
+  --muted: #a9bfbd;
+  --line: #3b555d;
+  --teal: #55cfb0;
+  --teal-deep: #67dabb;
+  --teal-pale: #1d453e;
+  --navy: #0d2632;
+  --amber: #e7bd6c;
+  --amber-pale: #4a3b24;
+  --danger: #f39a87;
+  --danger-pale: #4b2f2c;
+}
+[data-theme="dark"] body { background: #101b22 !important; color: #e7f2ef !important; }
+[data-theme="dark"] .site-header { background: rgba(16,27,34,.97) !important; border-color: #304850 !important; box-shadow: 0 5px 20px rgba(0,0,0,.24); }
+[data-theme="dark"] .brand strong, [data-theme="dark"] .main-nav a, [data-theme="dark"] .login-link { color: #e7f2ef !important; }
+[data-theme="dark"] .brand small, [data-theme="dark"] .main-nav a:hover, [data-theme="dark"] .main-nav a.is-active { color: #67dabb !important; }
+[data-theme="dark"] .login-link, [data-theme="dark"] .theme-button { border-color: #4c706f !important; background: #1b3038 !important; color: #dff5ef !important; }
+[data-theme="dark"] .hero-section, [data-theme="dark"] .problem-section, [data-theme="dark"] .how-section, [data-theme="dark"] .audience-section, [data-theme="dark"] .medicine-info-section, [data-theme="dark"] .saved-section, [data-theme="dark"] .donation-section, [data-theme="dark"] .donations-history-section, [data-theme="dark"] .assistant-section, [data-theme="dark"] .stories-section, [data-theme="dark"] .faq-section, [data-theme="dark"] .final-cta, [data-theme="dark"] .search-workspace { background: #14262e !important; color: #e7f2ef !important; }
+[data-theme="dark"] .hero-section h1, [data-theme="dark"] .problem-section h2, [data-theme="dark"] .how-section h2, [data-theme="dark"] .audience-section h2, [data-theme="dark"] .medicine-info-section h2, [data-theme="dark"] .saved-section h2, [data-theme="dark"] .donation-section h2, [data-theme="dark"] .donations-history-section h2, [data-theme="dark"] .assistant-section h2, [data-theme="dark"] .faq-section h2, [data-theme="dark"] .search-workspace h2 { color: #e7f2ef !important; }
+[data-theme="dark"] .hero-section p, [data-theme="dark"] .problem-section p, [data-theme="dark"] .how-section p, [data-theme="dark"] .audience-section p, [data-theme="dark"] .medicine-info-section p, [data-theme="dark"] .saved-section p, [data-theme="dark"] .donation-section p, [data-theme="dark"] .donations-history-section p, [data-theme="dark"] .assistant-section p, [data-theme="dark"] .faq-section p, [data-theme="dark"] .search-workspace p { color: #a9bfbd !important; }
+[data-theme="dark"] .audience-panel, [data-theme="dark"] .medicine-info-card, [data-theme="dark"] .saved-layout, [data-theme="dark"] .donation-card, [data-theme="dark"] .donation-history-card, [data-theme="dark"] .assistant-card, [data-theme="dark"] .medicine-result, [data-theme="dark"] .map-panel, [data-theme="dark"] .story-grid article, [data-theme="dark"] .how-card, [data-theme="dark"] .problem-step { background: #1b3038 !important; border-color: #405e66 !important; color: #e7f2ef !important; box-shadow: 0 12px 28px rgba(0,0,0,.2) !important; }
+[data-theme="dark"] .medicine-meta span, [data-theme="dark"] .info-item, [data-theme="dark"] .donation-rules, [data-theme="dark"] .assistant-messages, [data-theme="dark"] .area-result { background: #243d45 !important; border-color: #46666d !important; color: #dcece9 !important; }
+[data-theme="dark"] .medicine-result h3, [data-theme="dark"] .medicine-result p, [data-theme="dark"] .medicine-meta, [data-theme="dark"] .medicine-kicker, [data-theme="dark"] .map-panel h3, [data-theme="dark"] .map-panel small, [data-theme="dark"] .nearby-pharmacy-copy strong, [data-theme="dark"] .nearby-pharmacy-copy small { color: #e7f2ef !important; }
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea { background: #172a32 !important; border-color: #46666d !important; color: #e7f2ef !important; }
+[data-theme="dark"] input::placeholder, [data-theme="dark"] textarea::placeholder { color: #8fa9a8 !important; }
+[data-theme="dark"] .assistant-message.assistant { background: #285149 !important; color: #effaf7 !important; }
+[data-theme="dark"] .assistant-message.user { background: #315776 !important; color: #fff !important; }
+[data-theme="dark"] .site-footer, [data-theme="dark"] .faq-section { background: #0c202a !important; }

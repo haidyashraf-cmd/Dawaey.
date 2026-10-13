@@ -1066,34 +1066,34 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         if cached and time.time() - cached[0] < 300:
             self.send_json(200, {"pharmacies": cached[1], "source": "OpenStreetMap cache", "latitude": latitude, "longitude": longitude})
             return
-        overpass_query = f"[out:json][timeout:8];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
-        request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+        overpass_query = f"[out:json][timeout:15];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
         payload = None
-        for endpoint in ("https://overpass-api.de/api/interpreter",):
+        endpoints = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter")
+        for endpoint in endpoints:
             try:
-                request.full_url = endpoint
-                with urlopen(request, timeout=3) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                break
+                request = Request(endpoint, data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+                with urlopen(request, timeout=12) as response:
+                    candidate = json.loads(response.read().decode("utf-8"))
+                if candidate.get("elements"):
+                    payload = candidate
+                    break
+                if payload is None:
+                    payload = candidate
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
-                print(f"Overpass provider failed: {error}", file=sys.stderr)
-        if False and payload is not None and not payload.get("elements"):
-            # An exact street geocode can land on a small map tile with no
-            # pharmacy nodes. Retry around the same point before declaring it
-            # empty, so a full address still returns nearby pharmacies.
+                print(f"Overpass provider failed ({endpoint}): {error}", file=sys.stderr)
+        if payload is None or not payload.get("elements"):
             wide_radius = min(max(radius * 2, 16000), 22000)
-            wide_query = f"[out:json][timeout:12];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
-            for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
+            wide_query = f"[out:json][timeout:20];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
+            for endpoint in endpoints:
                 try:
                     wide_request = Request(endpoint, data=urllib.parse.urlencode({"data": wide_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
-                    with urlopen(wide_request, timeout=28) as response:
+                    with urlopen(wide_request, timeout=20) as response:
                         candidate = json.loads(response.read().decode("utf-8"))
                     if candidate.get("elements"):
                         payload = candidate
                         break
                 except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
-                    print(f"Wide Overpass provider failed: {error}", file=sys.stderr)
-
+                    print(f"Wide Overpass provider failed ({endpoint}): {error}", file=sys.stderr)
         if payload is None or not payload.get("elements"):
             # Nominatim is slower and returns fewer records, but keeps the search
             # useful when public Overpass instances are busy or unavailable.

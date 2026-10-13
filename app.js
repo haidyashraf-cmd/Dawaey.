@@ -147,9 +147,7 @@ function renderOverview() {
   const categories = getCategoryCounts().slice(0, 6);
   const highestCategory = Math.max(1, ...categories.map(([, count]) => count));
   const supplyByNumber = getSupplyByNumber();
-  const suggested = [...supply]
-    .sort((left, right) => numericValue(right["كمية التوريد المقترحة"]) - numericValue(left["كمية التوريد المقترحة"]))
-    .slice(0, 5);
+  const suggested = stockAlertRecords(supply).slice(0, 10);
   const pharmacyRows = pharmacies.slice(0, 5);
   const pharmacyName = state.user?.pharmacyName || "الصيدلية";
 
@@ -185,7 +183,7 @@ function renderOverview() {
         <div class="category-chart">${categories.map(([category, count]) => `<div class="category-row"><span class="category-name" title="${escapeHtml(category)}">${escapeHtml(category)}</span><span class="category-track"><span class="category-fill" style="--bar-width:${Math.max(4, count / highestCategory * 100)}%"></span></span><span class="category-count">${formatNumber(count)}</span></div>`).join("")}</div>
       </article>
       <article class="panel">
-        <div class="panel-heading"><div><h2>مقترحات التوريد</h2><p>أعلى الكميات المقترحة في الملف</p></div><span class="panel-kicker">${formatNumber(supply.length)} صنف</span></div>
+        <div class="panel-heading"><div><h2>أصناف تحت حد الطلب</h2><p>أول 10 أصناف تحتاج مراجعة</p></div><span class="panel-kicker">${formatNumber(reorderCount)} صنف</span></div>
         <div class="supply-list">${suggested.map((record) => `<div class="supply-row"><div><strong>${escapeHtml(record["اسم الدواء"])}</strong><small>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</small></div><span class="supply-quantity">${formatNumber(record["كمية التوريد المقترحة"])} <small>${escapeHtml(record["وحدة القياس"] || "وحدة")}</small></span></div>`).join("")}</div>
         <p class="panel-note"><span aria-hidden="true">i</span><span>الكميات المقترحة من ورقة التوريد، وليست طلبات شراء مؤكدة.</span></p>
       </article>
@@ -377,7 +375,9 @@ function renderDonations() {
     const donorMap = Number.isFinite(donorLat) && Number.isFinite(donorLon) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donorLat},${donorLon}`)}` : "";
     const donorLink = donorMap ? `<a class="donor-map-link" href="${donorMap}" target="_blank" rel="noopener">فتح موقع المتبرع على الخريطة ⌖</a>` : `<span class="location-missing">موقع المتبرع غير مسجل</span>`;
     const locationLinks = `<div class="donation-location-actions">${donorLink}</div>`;
-    return `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>👤 المتبرع: ${escapeHtml(request.donorName || "غير مسجل")}</span><span>🪪 الرقم القومي: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div>${locationLinks}<div class="donation-request-actions">` + `${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`;
+    const imageData = String(request.imageData || "");
+    const imagePreview = /^data:image\//i.test(imageData) ? `<div class="donation-image-preview"><img src="${imageData}" alt="صورة الدواء المرسل من المتبرع" loading="lazy"><a href="${imageData}" target="_blank" rel="noopener">فتح صورة الدواء</a></div>` : "";
+    return `<article class="donation-request-card"><div class="donation-request-top"><div><span class="eyebrow">طلب تبرع</span><h2>${escapeHtml(request.medicine || "دواء غير محدد")}</h2></div><span class="donation-status ${donationStatusClass(request.status)}">${donationStatusLabel(request.status)}</span></div><div class="donation-request-meta"><span>⌖ ${escapeHtml(request.area || "منطقة غير محددة")}</span><span>👤 المتبرع: ${escapeHtml(request.donorName || "غير مسجل")}</span><span>🪪 الرقم القومي: ${escapeHtml(request.nationalId || "غير مسجل")}</span><span>▣ الكمية: ${escapeHtml(request.quantity || "غير محددة")} ${escapeHtml(request.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(request.createdAt || Date.now())))}</span></div>${imagePreview}${locationLinks}<div class="donation-request-actions">` + `${request.status === "pending" ? '<button class="donation-action accept" data-donation-action="accepted" data-donation-id="' + escapeHtml(request.id) + '">قبول الطلب</button><button class="donation-action reject" data-donation-action="rejected" data-donation-id="' + escapeHtml(request.id) + '">رفض</button>' : ''}${request.status === "accepted" ? '<button class="donation-action complete" data-donation-action="completed" data-donation-id="' + escapeHtml(request.id) + '">تأكيد استلام التبرع</button>' : ''}${request.status !== "pending" ? '<button class="donation-action reset" data-donation-action="pending" data-donation-id="' + escapeHtml(request.id) + '">إعادة فتح</button>' : ''}</div></article>`;
   }).join("") : '<div class="panel empty-state donation-empty"><strong>لا توجد طلبات تبرع حتى الآن</strong><p>عندما يرسل مريض طلب تبرع من صفحة المريض، سيظهر هنا فورًا على نفس الجهاز.</p></div>';
   content.innerHTML = `${pageHeading("طلبات التبرع بالأدوية", "راجع طلبات المرضى وحدد ما يمكن للصيدلية استقباله.", "خدمة المجتمع")}<div class="donation-dashboard-note"><strong>تنبيه مهم:</strong><span>تأكد من صلاحية الدواء وسلامة العبوة قبل القبول، وتواصل مع المتبرع خارج الموقع لتنسيق التسليم.</span></div><section class="donation-request-grid" id="donation-request-results">${cards}</section>`;
 }
@@ -591,7 +591,7 @@ document.addEventListener("click", (event) => {
     const panel = document.querySelector("#stock-alert-panel");
     const button = document.querySelector("#stock-alert-button");
     const open = panel?.hasAttribute("hidden");
-    if (open) { renderStockAlertPanel(); panel.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); }
+    if (open) { renderStockAlertPanel(); panel.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); const count = document.querySelector("#stock-alert-count"); if (count) count.textContent = "0"; button?.classList.remove("has-alerts"); }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
     return;
   }

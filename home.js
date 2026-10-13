@@ -2,7 +2,7 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [], userCoordinates: null };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [], userCoordinates: null, areaFromGps: false };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
@@ -267,9 +267,9 @@ function getNearbyPharmacies(query = state.areaQuery) {
     const segments = area.split(/\s*[-–/]\s*/).map(simplifyArea);
     return area.includes(normalize(query)) || segments.some((segment) => segment.includes(normalizedQuery) || normalizedQuery.includes(segment));
   });
-  // Remote results were already located by GPS/geocoding; do not hide them
-  // because a full street address is longer than the directory label.
-  if (state.externalPharmacies.length && query === state.areaQuery) {
+  // Remote results are used only after the user explicitly chose GPS. Typed
+  // locations stay limited to matching directory records.
+  if (state.areaFromGps && state.externalPharmacies.length && query === state.areaQuery) {
     return [...directoryMatches, ...state.externalPharmacies.filter(hasNamedPharmacy)];
   }
   return directoryMatches;
@@ -794,11 +794,13 @@ function setupEvents() {
   });
   document.querySelector("#area-search").addEventListener("input", (event) => {
     state.areaQuery = event.target.value.trim();
+    state.areaFromGps = false;
+    state.userCoordinates = null;
     state.externalPharmacies = [];
     renderAreaResults(state.areaQuery);
     if (state.matches.length) renderMedicineResults();
     window.clearTimeout(window.dawaeyAreaTimer);
-    if (state.areaQuery) window.dawaeyAreaTimer = window.setTimeout(() => loadExternalPharmacies(state.areaQuery).then(() => { renderAreaResults(state.areaQuery); if (state.matches.length) renderMedicineResults(); }), 650);
+    if (state.areaQuery && !state.areaFromGps) window.dawaeyAreaTimer = window.setTimeout(() => { renderAreaResults(state.areaQuery); if (state.matches.length) renderMedicineResults(); }, 250);
   });
   document.querySelector("#nearby-filter").addEventListener("click", () => {
     document.querySelector("#area-search").focus();
@@ -819,20 +821,26 @@ function setupEvents() {
     event?.stopPropagation();
     if (!navigator.geolocation) { showToast("المتصفح مش بيدعم تحديد الموقع"); return; }
     document.querySelector(".search-workspace .map-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    showToast("بنحدد موقعك ونجهز خريطة الصيدليات القريبة...");
+    const patientMapWindow = window.open("about:blank", "dawaey-patient-nearby-map");
+    showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });
         const areaPayload = await areaResponse.json().catch(() => ({}));
         const area = areaPayload.area || areaPayload.city || areaPayload.governorate || "بالقرب من موقعك";
         state.areaQuery = area;
+        state.areaFromGps = true;
         state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
+        const patientMapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.href = patientMapUrl;
         document.querySelector("#area-search").value = area;
         const mapPanel = document.querySelector(".search-workspace .map-panel");
         if (mapPanel) {
           mapPanel.dataset.latitude = String(coords.latitude);
           mapPanel.dataset.longitude = String(coords.longitude);
           mapPanel.classList.add("has-user-location");
+          mapPanel.querySelector(".user-map-link")?.remove();
+          mapPanel.insertAdjacentHTML("beforeend", `<a class="user-map-link" href="${patientMapUrl}" target="_blank" rel="noopener">فتح خريطة موقعي والصيدليات القريبة ⌖</a>`);
         }
         await loadExternalPharmacies(area, { latitude: coords.latitude, longitude: coords.longitude });
         renderAreaResults(area);

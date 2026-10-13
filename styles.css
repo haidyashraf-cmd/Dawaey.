@@ -504,3 +504,7 @@ body { background: radial-gradient(circle at 72% 0%, rgba(71,91,214,.16), transp
 .pharmacy-location-map { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 14px; padding: 10px 12px; border: 1px solid #b8d9d0; border-radius: 10px; background: #eef8f4; }
 .pharmacy-location-map a { color: #087462; font-size: 11px; font-weight: 800; text-decoration: none; }
 .pharmacy-location-map small { color: #708286; font-size: 9px; }
+.user-map-link { display: inline-flex; margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: #e4f3ef; color: #087462; font-size: 11px; font-weight: 800; text-decoration: none; }
+.donation-image-preview { display: flex; align-items: center; gap: 10px; margin: 10px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.donation-image-preview img { width: 76px; height: 76px; object-fit: cover; border-radius: 6px; }
+.donation-image-preview a { color: var(--teal-deep); font-size: 10px; font-weight: 800; text-decoration: none; }

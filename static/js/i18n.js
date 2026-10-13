@@ -344,13 +344,13 @@
     document.documentElement.dir = language === "en" ? "ltr" : "rtl";
     textNodes().forEach((node) => { if (!originals.has(node)) originals.set(node, node.nodeValue); node.nodeValue = translate(originals.get(node), language); });
     translateAttributes();
-    document.querySelectorAll("#language-toggle").forEach((button) => { button.textContent = "En"; button.setAttribute("aria-label", language === "en" ? "Switch to Arabic" : "التبديل للإنجليزية"); button.setAttribute("title", language === "en" ? "Switch to Arabic" : "تغيير اللغة"); });
+    document.querySelectorAll("#language-toggle").forEach((button) => { button.textContent = "E"; button.setAttribute("aria-label", language === "en" ? "Switch to Arabic" : "التبديل للإنجليزية"); button.setAttribute("title", language === "en" ? "Switch to Arabic" : "تغيير اللغة"); });
     document.title = language === "en" ? "Dawaey | Find your medicine" : originalTitle;
     localStorage.setItem("dawaey-language", language); applying = false;
   }
   function toggle() { language = language === "en" ? "ar" : "en"; apply(); }
   window.dawaeyI18n = { apply, toggle, get language() { return language; }, translate };
-  document.addEventListener("click", (event) => { const button = event.target.closest("#language-toggle"); if (button) { event.preventDefault(); event.stopPropagation(); toggle(); } }, true);
+  document.addEventListener("click", (event) => { if (event.target.closest("#language-toggle")) { event.preventDefault(); toggle(); } });
   new MutationObserver(() => { if (!applying && language === "en") apply(); }).observe(document.body, { childList: true, subtree: true });
   window.addEventListener("DOMContentLoaded", apply);
 })();

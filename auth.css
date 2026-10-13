@@ -337,6 +337,3 @@ body { background: radial-gradient(circle at 12% 0%, rgba(0,191,166,.22), transp
 .field > select { width: 100%; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid #c9d8e4; border-radius: 8px; background: var(--surface, #fff); color: var(--ink, #102a43); font-size: 12px; font-weight: 500; }
 .field > select:focus { border-color: #00bfa6; outline: 0; box-shadow: 0 0 0 3px rgba(0,191,166,.14); }
 .field > select:disabled { color: #92a1a0; background: #f3f7f8; cursor: not-allowed; }
-
-.language-toggle { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; }
-[data-theme="dark"] .language-toggle { border-color: #47636a; background: #20363e; color: #e7f3ee; }

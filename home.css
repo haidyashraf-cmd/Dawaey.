@@ -886,28 +886,6 @@ body { background: var(--paper); color: var(--ink); }
 .audience-section p, .medicine-info-section p, .saved-section p, .donation-section p, .donations-history-section p, .assistant-section p, .search-workspace p, .medicine-result p, .map-panel small { color: #4d666c !important; }
 @media (max-width: 620px) { .audience-section { background: #d1e2dc !important; }.medicine-info-section { background: #d5e0ea !important; }.saved-section { background: #e7dcc5 !important; }.donation-section { background: #cfe3dc !important; }.donations-history-section { background: #ead9c6 !important; }.assistant-section { background: #d2e0e9 !important; }.search-workspace { background: #c9ddd4 !important; }.audience-panel, .medicine-info-card, .saved-layout, .donation-card, .assistant-card, .donation-history-card, .medicine-result, .search-workspace .map-panel { box-shadow: 0 7px 18px rgba(43,72,76,.1) !important; } }
 
-/* Language switcher: keeps the existing header controls intact. */
-.language-toggle { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; transition: background .2s ease, color .2s ease, transform .2s ease; }
-.language-toggle:hover { background: var(--teal-pale); color: var(--teal-deep); transform: translateY(-1px); }
-[data-theme="dark"] .language-toggle { border-color: #47636a; background: #20363e; color: #e7f3ee; }
-[data-theme="dark"] .language-toggle:hover { background: #2b5053; color: #b9f1dc; }
-
-/* Final dark-mode layer: keeps patient sections readable after the pastel palette. */
-[data-theme="dark"] body { background:#101b22 !important; color:#e6f0ed !important; }
-[data-theme="dark"] .site-header { background:rgba(16,27,34,.96) !important; border-color:#30454d !important; }
-[data-theme="dark"] .hero-section, [data-theme="dark"] .audience-section, [data-theme="dark"] .medicine-info-section, [data-theme="dark"] .saved-section, [data-theme="dark"] .donation-section, [data-theme="dark"] .donations-history-section, [data-theme="dark"] .assistant-section, [data-theme="dark"] .search-workspace, [data-theme="dark"] .stories-section, [data-theme="dark"] .final-cta { background:#16272f !important; }
-[data-theme="dark"] .audience-panel, [data-theme="dark"] .medicine-info-card, [data-theme="dark"] .saved-layout, [data-theme="dark"] .donation-card, [data-theme="dark"] .donation-history-card, [data-theme="dark"] .assistant-card, [data-theme="dark"] .medicine-result, [data-theme="dark"] .nearby-pharmacy, [data-theme="dark"] .area-result, [data-theme="dark"] .search-workspace .map-panel { background:#20353d !important; border-color:#41616a !important; color:#e6f0ed !important; }
-[data-theme="dark"] .audience-tabs, [data-theme="dark"] .result-filters, [data-theme="dark"] .saved-list, [data-theme="dark"] .assistant-messages, [data-theme="dark"] .donation-rules, [data-theme="dark"] .medicine-nearby, [data-theme="dark"] .map-panel-head { background:#29454b !important; border-color:#4d7075 !important; }
-[data-theme="dark"] .audience-section h2, [data-theme="dark"] .audience-section h3, [data-theme="dark"] .medicine-info-section h2, [data-theme="dark"] .medicine-info-section h3, [data-theme="dark"] .saved-section h2, [data-theme="dark"] .donation-section h2, [data-theme="dark"] .donations-history-section h2, [data-theme="dark"] .assistant-section h2, [data-theme="dark"] .search-workspace h2, [data-theme="dark"] .medicine-result h3, [data-theme="dark"] .map-panel h3, [data-theme="dark"] .medicine-title-row h3 { color:#effaf5 !important; }
-[data-theme="dark"] .audience-section p, [data-theme="dark"] .medicine-info-section p, [data-theme="dark"] .saved-section p, [data-theme="dark"] .donation-section p, [data-theme="dark"] .donations-history-section p, [data-theme="dark"] .assistant-section p, [data-theme="dark"] .search-workspace p, [data-theme="dark"] .medicine-result p, [data-theme="dark"] .map-panel small, [data-theme="dark"] .medicine-title-row p, [data-theme="dark"] .nearby-pharmacy-copy small { color:#bdd0cf !important; }
-[data-theme="dark"] .info-item, [data-theme="dark"] .saved-item, [data-theme="dark"] .history-empty { background:#29454b !important; border-color:#4d7075 !important; color:#e6f0ed !important; }
-[data-theme="dark"] .info-item b, [data-theme="dark"] .info-item span, [data-theme="dark"] .saved-item, [data-theme="dark"] .history-meta, [data-theme="dark"] .history-card-footer small { color:#d5e5e1 !important; }
-[data-theme="dark"] .assistant-message.assistant { background:#2b5049 !important; color:#e5f5ef !important; }
-[data-theme="dark"] .assistant-message.user { background:#31546b !important; color:#f0f7ff !important; }
-[data-theme="dark"] .area-search input, [data-theme="dark"] .assistant-form input { background:#172a31 !important; border-color:#4d7075 !important; color:#effaf5 !important; }
-[data-theme="dark"] .medicine-meta span { background:#315158 !important; border-color:#4d7075 !important; color:#d8ebe5 !important; }
-[data-theme="dark"] .medicine-result-caption span:last-child, [data-theme="dark"] .nearby-heading > span, [data-theme="dark"] .nearby-caveat { color:#bdd0cf !important; }
-
 /* Mobile parity: keep every patient section and header action reachable like desktop. */
 @media (max-width: 900px) {
   body { overflow-x: hidden; }

@@ -361,10 +361,10 @@ function renderDonationHistory() {
 }
 
 function updateStats() {
-  const records = getRecords();
+  const uniqueNames = new Set(getRecords().map((record) => record["اسم الدواء"]));
   const pharmacyNames = new Set(state.pharmacies.map((record) => record["اسم الصيدلية"]));
   const contacts = uniquePharmacies();
-  const values = { medicines: records.length, pharmacies: pharmacyNames.size, contacts: contacts.length };
+  const values = { medicines: uniqueNames.size, pharmacies: pharmacyNames.size, contacts: contacts.length };
   for (const [key, value] of Object.entries(values)) {
     const element = document.querySelector(`[data-stat="${key}"]`);
     if (!element) continue;

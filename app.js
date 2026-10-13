@@ -617,17 +617,21 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-retry]")) startApp();
   if (event.target.closest("#pharmacy-gps")) {
     if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
-    showToast("بنحدد موقع الصيدلية ونبحث عن القريب...");
+    const mapWindow = window.open("about:blank", "dawaey-pharmacy-nearby-map");
+    showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
-        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=15000`, { credentials: "same-origin" });
+        const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
+        const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=25000`, { credentials: "same-origin" });
         const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "تعذر تحميل الصيدليات القريبة.");
         state.externalPharmacies = payload.pharmacies || [];
         state.pharmacyQuery = "";
         renderPharmacies();
         showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية قريبة.`);
-      } catch (error) { showToast(error.message || "تعذر تحميل صيدليات GPS."); }
-    }, () => showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."), { timeout: 10000, maximumAge: 60000 });
+      } catch (error) { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast(error.message || "تعذر تحميل صيدليات GPS."); }
+    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ جرّب البحث باسم المكان."); }, { timeout: 10000, maximumAge: 60000 });
   }
 });
 

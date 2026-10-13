@@ -389,7 +389,7 @@ def uploaded_json_value(value):
 
 def clean_uploaded_rows(rows):
     aliases = {
-        "اسم الصنف": "اسم الدواء", "الصنف": "اسم الدواء", "الدواء": "اسم الدواء", "اسم المنتج": "اسم الدواء",
+        "اسم الصنف": "اسم الدواء", "الصنف": "اسم الدواء", "الدواء": "اسم الدواء", "اسم المنتج": "اسم الدواء", "الاسم": "اسم الدواء", "الاسم التجاري": "اسم الدواء", "medicine": "اسم الدواء", "drug": "اسم الدواء",
         "رقم الصنف": "الكود", "كود الصنف": "الكود", "رقم الصنف/الكود": "الكود",
         "الفئة": "طبيعة الدواء", "التصنيف": "طبيعة الدواء", "نوع الدواء": "طبيعة الدواء",
         "الوحدة": "وحدة القياس", "نوع العبوة": "وحدة القياس", "العبوة": "وحدة القياس",
@@ -411,7 +411,11 @@ def clean_uploaded_rows(rows):
             normalized[key]=uploaded_json_value(value)
             canonical=aliases.get(key)
             if canonical and not normalized.get(canonical): normalized[canonical]=uploaded_json_value(value)
-        if any(value != "" for value in normalized.values()): clean.append(normalized)
+        if not normalized.get("اسم الدواء"):
+            continue
+        allowed = {"م", "اسم الدواء", "الكود", "طبيعة الدواء", "المادة الفعالة", "وحدة القياس", "الكمية الحالية", "الحد الأدنى", "حالة المخزون", "كمية التوريد المقترحة", "الاستهلاك الشهري", "الاستهلاك", "كمية الاستهلاك", "سعر", "التركيز", "الشكل الصيدلي", "باركود"}
+        normalized = {key: value for key, value in normalized.items() if key in allowed or any(token in key for token in ("استهلاك", "صرف", "مبيعات", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"))}
+        clean.append(normalized)
     return clean
 
 

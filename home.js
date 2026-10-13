@@ -611,7 +611,8 @@ function setupEvents() {
   });
   const useGps = () => {
     if (!navigator.geolocation) { showToast("المتصفح مش بيدعم تحديد الموقع"); return; }
-    showToast("بنحدد موقعك ونبحث عن الصيدليات القريبة...");
+    const mapWindow = window.open("about:blank", "dawaey-nearby-map");
+    showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });
@@ -619,6 +620,8 @@ function setupEvents() {
         const area = areaPayload.area || areaPayload.city || areaPayload.governorate || "بالقرب من موقعك";
         state.areaQuery = area;
         document.querySelector("#area-search").value = area;
+        const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
         await loadExternalPharmacies(area, { latitude: coords.latitude, longitude: coords.longitude });
         renderAreaResults(area);
         showToast(`ظهر دليل الصيدليات القريبة من ${area}.`);
@@ -626,7 +629,7 @@ function setupEvents() {
         showToast(error.message || "الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا");
         document.querySelector("#area-search").focus();
       }
-    }, () => showToast("الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا"), { timeout: 10000, maximumAge: 60000 });
+    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا"); }, { timeout: 10000, maximumAge: 60000 });
   };
   document.querySelector("#use-location")?.addEventListener("click", useGps);
   document.querySelector("#use-location-directory")?.addEventListener("click", useGps);

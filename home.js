@@ -685,18 +685,33 @@ function setupDonationAndAssistant() {
     if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
     showToast("بنحدد مكانك للتبرع...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      document.querySelector("#donation-latitude").value = coords.latitude;
-      document.querySelector("#donation-longitude").value = coords.longitude;
-      document.querySelector("#donation-area").dataset.latitude = String(coords.latitude);
-      document.querySelector("#donation-area").dataset.longitude = String(coords.longitude);
+      const latitude = Number(coords.latitude).toFixed(6);
+      const longitude = Number(coords.longitude).toFixed(6);
+      const areaInput = document.querySelector("#donation-area");
+      document.querySelector("#donation-latitude").value = latitude;
+      document.querySelector("#donation-longitude").value = longitude;
+      areaInput.dataset.latitude = latitude;
+      areaInput.dataset.longitude = longitude;
+      // Keep the exact map point in the submitted donation, not only a reverse-geocoded area name.
+      areaInput.value = `موقعي على الخريطة: ${latitude}, ${longitude}`;
+      state.areaQuery = areaInput.value.trim();
+      let mapLink = document.querySelector("#donation-gps-location");
+      if (!mapLink) {
+        mapLink = document.createElement("a");
+        mapLink.id = "donation-gps-location";
+        mapLink.className = "donation-gps-location";
+        areaInput.closest("label")?.insertAdjacentElement("afterend", mapLink);
+      }
+      mapLink.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
+      mapLink.target = "_blank";
+      mapLink.rel = "noopener";
+      mapLink.textContent = `فتح نفس نقطة موقعي على الخريطة (${latitude}, ${longitude}) ⌖`;
       try {
-        const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
+        const response = await fetch(`/api/area?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`);
         const payload = await response.json();
-        document.querySelector("#donation-area").value = payload.displayName || payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
-        state.areaQuery = document.querySelector("#donation-area").value.trim();
-        showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
-      } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
-    }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 });
+        showToast(payload.displayName ? `تم تثبيت نقطة GPS بدقة قرب ${payload.displayName}` : "تم تثبيت نقطة GPS على الخريطة.");
+      } catch { showToast("تم تثبيت نقطة GPS على الخريطة."); }
+    }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));

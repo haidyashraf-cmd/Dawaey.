@@ -1144,3 +1144,7 @@ body { background: var(--paper); color: var(--ink); }
 [data-theme="dark"] .search-workspace .area-result { background: #4b686a !important; border-color: #789395 !important; color: #f4faf7 !important; }
 [data-theme="dark"] .assistant-message.assistant { background: #496b6b !important; color: #f2faf7 !important; }
 [data-theme="dark"] .assistant-message.user { background: #5c7894 !important; color: #fff !important; }
+
+.donation-gps-location { display: inline-flex; width: fit-content; margin-top: -3px; color: #176d5f; font-size: 9px; font-weight: 800; text-decoration: none; }
+.donation-gps-location:hover { color: #0d4e46; text-decoration: underline; }
+[data-theme="dark"] .donation-gps-location { color: #a7ead4 !important; }

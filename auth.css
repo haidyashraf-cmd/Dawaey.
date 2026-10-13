@@ -338,5 +338,5 @@ body { background: radial-gradient(circle at 12% 0%, rgba(0,191,166,.22), transp
 .field > select:focus { border-color: #00bfa6; outline: 0; box-shadow: 0 0 0 3px rgba(0,191,166,.14); }
 .field > select:disabled { color: #92a1a0; background: #f3f7f8; cursor: not-allowed; }
 
-.language-toggle { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 9px; font-weight: 800; }
+.language-toggle { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; }
 [data-theme="dark"] .language-toggle { border-color: #47636a; background: #20363e; color: #e7f3ee; }

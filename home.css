@@ -887,7 +887,7 @@ body { background: var(--paper); color: var(--ink); }
 @media (max-width: 620px) { .audience-section { background: #d1e2dc !important; }.medicine-info-section { background: #d5e0ea !important; }.saved-section { background: #e7dcc5 !important; }.donation-section { background: #cfe3dc !important; }.donations-history-section { background: #ead9c6 !important; }.assistant-section { background: #d2e0e9 !important; }.search-workspace { background: #c9ddd4 !important; }.audience-panel, .medicine-info-card, .saved-layout, .donation-card, .assistant-card, .donation-history-card, .medicine-result, .search-workspace .map-panel { box-shadow: 0 7px 18px rgba(43,72,76,.1) !important; } }
 
 /* Language switcher: keeps the existing header controls intact. */
-.language-toggle { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 9px; font-weight: 800; transition: background .2s ease, color .2s ease, transform .2s ease; }
+.language-toggle { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; transition: background .2s ease, color .2s ease, transform .2s ease; }
 .language-toggle:hover { background: var(--teal-pale); color: var(--teal-deep); transform: translateY(-1px); }
 [data-theme="dark"] .language-toggle { border-color: #47636a; background: #20363e; color: #e7f3ee; }
 [data-theme="dark"] .language-toggle:hover { background: #2b5053; color: #b9f1dc; }

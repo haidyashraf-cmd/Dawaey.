@@ -39,7 +39,7 @@
     document.documentElement.dir = language === "en" ? "ltr" : "rtl";
     textNodes().forEach((node) => { if (!originals.has(node)) originals.set(node, node.nodeValue); node.nodeValue = translate(originals.get(node), language); });
     translateAttributes();
-    document.querySelectorAll("#language-toggle").forEach((button) => { button.textContent = language === "en" ? "العربية" : "English"; button.setAttribute("aria-label", language === "en" ? "Switch to Arabic" : "التبديل للإنجليزية"); button.setAttribute("title", language === "en" ? "Switch to Arabic" : "تغيير اللغة"); });
+    document.querySelectorAll("#language-toggle").forEach((button) => { button.textContent = "E"; button.setAttribute("aria-label", language === "en" ? "Switch to Arabic" : "التبديل للإنجليزية"); button.setAttribute("title", language === "en" ? "Switch to Arabic" : "تغيير اللغة"); });
     document.title = language === "en" ? "Dawaey | Find your medicine" : originalTitle;
     localStorage.setItem("dawaey-language", language); applying = false;
   }

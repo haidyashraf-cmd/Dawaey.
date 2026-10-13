@@ -9,6 +9,15 @@ const aliases = new Map([
   ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"],
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
+const EGYPT_GOVERNORATE_CODES = new Set(["01", "02", "03", "04", "11", "12", "13", "14", "15", "16", "17", "18", "19", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "32", "33", "34", "35", "88"]);
+function validEgyptianNationalId(value) {
+  if (!/^\d{14}$/.test(value) || !["2", "3"].includes(value[0])) return false;
+  const year = Number(value.slice(1, 3)) + (value[0] === "2" ? 1900 : 2000);
+  const month = Number(value.slice(3, 5));
+  const day = Number(value.slice(5, 7));
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day && EGYPT_GOVERNORATE_CODES.has(value.slice(7, 9));
+}
 
 const searchInput = document.querySelector("#medicine-search");
 const suggestionList = document.querySelector("#search-suggestions");
@@ -286,7 +295,13 @@ function renderAccountProfile() {
 
 function renderDonationHistory() {
   const container = document.querySelector("#donation-history");
-  if (container) container.innerHTML = "";
+  if (!container) return;
+  const labels = { pending: ["قيد المراجعة", "pending"], accepted: ["تم قبول التبرع", "accepted"], completed: ["تم التسليم", "completed"], rejected: ["لم يتم القبول", "rejected"] };
+  if (!state.donations.length) {
+    container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي حالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
+    return;
+  }
+  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">الإشعارات</a></div></article>`; }).join("");
 }
 
 function updateStats() {
@@ -536,7 +551,7 @@ function setupDonationAndAssistant() {
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
-    if (!/^\d{14}$/.test(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقم."); return; }
+    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا، وتاريخ ميلاد ومحافظة صحيحة."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
     loadExternalPharmacies(area, latitude && longitude ? { latitude, longitude } : null).then(() => renderDonationResults(rows[0].medicine, area));
@@ -575,7 +590,7 @@ function setupDonationAndAssistant() {
       try {
         const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
         const payload = await response.json();
-        document.querySelector("#donation-area").value = payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
+        document.querySelector("#donation-area").value = payload.displayName || payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
         showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
       } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
     }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { timeout: 10000, maximumAge: 60000 });

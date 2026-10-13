@@ -9,6 +9,16 @@ const aliases = new Map([
   ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"],
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
+function validEgyptianNationalId(value) { return /^[23]\d{13}$/.test(value); }
+function readDonationImage(file) {
+  if (!file) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve("");
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
+}
 
 const searchInput = document.querySelector("#medicine-search");
 const suggestionList = document.querySelector("#search-suggestions");
@@ -38,18 +48,58 @@ function loadOcrScript() {
   return new Promise((resolve, reject) => { const script = document.createElement("script"); script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"; script.onload = () => resolve(window.Tesseract); script.onerror = reject; document.head.appendChild(script); });
 }
 
+function prepareMedicineImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(2.4, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(900, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(900, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.filter = "grayscale(1) contrast(1.25) brightness(1.08)";
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas);
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image-load")); };
+    image.src = url;
+  });
+}
+
+function findMedicineFromText(text) {
+  const clean = String(text || "").replace(/[|\n\r,،;؛:()\[\]{}]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  const words = clean.split(" ").filter(Boolean);
+  const phrases = [clean];
+  for (let size = Math.min(5, words.length); size >= 1; size -= 1) {
+    for (let index = 0; index + size <= words.length; index += 1) phrases.push(words.slice(index, index + size).join(" "));
+  }
+  let best = null;
+  for (const phrase of phrases) {
+    const match = findMatches(phrase)[0];
+    if (!match) continue;
+    if (!best || match.score > best.score || (match.score === best.score && phrase.length > best.length)) best = { match, score: match.score, length: phrase.length };
+    if (match.score === 100) break;
+  }
+  return best?.match || null;
+}
+
 async function searchFromPhoto(file) {
   showToast("بنقرأ اسم الدواء من الصورة بالعربي والإنجليزي...");
   try {
     const Tesseract = await loadOcrScript();
-    const result = await Tesseract.recognize(file, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); } });
+    const image = await prepareMedicineImage(file);
+    const result = await Tesseract.recognize(image, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
-    const candidate = findMatches(text)[0];
-    if (!candidate) { showToast("قرأنا الصورة لكن الاسم مش موجود في سجل المصدر؛ جرّب كتابة الاسم."); return; }
+    const candidate = findMedicineFromText(text);
+    if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
-  } catch { showToast("تعذر قراءة الصورة. جرّب صورة أوضح أو اكتب اسم الدواء يدويًا."); }
+  } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
 }
-
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -129,9 +179,9 @@ function renderMedicineCard(record) {
   const nearby = nearbyPharmacyMarkup(record);
   return `<article class="medicine-result">
     <span class="medicine-glyph" aria-hidden="true"><i></i><b>Rx</b></span>
-    <div class="medicine-main"><div class="medicine-title-row"><div><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
-      <div class="medicine-meta"><span>الكود ${escapeHtml(record["الكود"] || "—")}</span><span>الكمية في السجل: ${numberFormat.format(Number(record["الكمية الحالية"] ?? record["الكمية"] ?? 0))} ${escapeHtml(record["وحدة القياس"] || record["الوحدة"] || "")}</span><span>حد الطلب: ${numberFormat.format(Number(record["الحد الأدنى"] ?? 0))}</span><span>المادة الفعالة: ${escapeHtml(record["المادة الفعالة"] || "غير محددة")}</span></div>
-      <button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button>
+    <div class="medicine-main"><div class="medicine-title-row"><div><span class="medicine-kicker">نتيجة من سجل دوائي</span><h3>${escapeHtml(record["اسم الدواء"])}</h3><p>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</p></div><span class="medicine-status ${status.className}">${status.label}</span></div>
+      <div class="medicine-result-caption"><span>${escapeHtml(record["طبيعة الدواء"] || "صنف دوائي")}</span><span>اختار الدواء لعرض معلوماته</span></div>
+      <div class="medicine-card-footer"><button class="save-medicine" type="button" data-save-medicine="${escapeHtml(record["م"])}" aria-pressed="${saved}">${saved ? "★ محفوظ في أدويتي" : "☆ أضف لأدويتي"}</button><span>اضغط على البطاقة لعرض التفاصيل</span></div>
     </div>
     ${nearby}
   </article>`;
@@ -178,8 +228,12 @@ function nearbyPharmacyMarkup(record) {
   const pharmacies = entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    const location = String(pharmacy["المنطقة / العنوان المتوقع"] ?? "").split(/\s*[-–/]\s*/).at(-1) ?? area;
-    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(location)} · مطابقة لمنطقتك</small><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
+    const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? area);
+    const latitude = Number(pharmacy["خط العرض (Latitude)"]);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"]);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener" aria-label="فتح عنوان ${escapeHtml(pharmacy["اسم الصيدلية"])} على الخريطة">${escapeHtml(address)} <span aria-hidden="true">⌖</span></a><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
   }).join("");
   return `<section class="medicine-nearby"><div class="nearby-heading"><strong>الصيدليات الأقرب حسب المنطقة</strong><span>${escapeHtml(area)}</span></div><div class="nearby-pharmacy-list">${pharmacies}</div><p class="nearby-caveat">الترتيب حسب المنطقة المسجلة، مش المسافة الدقيقة. ملف المصدر لا يربط مخزون الدواء بالفرع.</p></section>`;
 }
@@ -215,7 +269,12 @@ function renderAreaResults(query = "") {
   container.innerHTML = entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    return `<div class="area-result"><span>${escapeHtml(pharmacy["اسم الصيدلية"])}<br><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
+    const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? query);
+    const latitude = Number(pharmacy["خط العرض (Latitude)"] ?? pharmacy.latitude ?? pharmacy.lat);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"] ?? pharmacy.longitude ?? pharmacy.lon);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<div class="area-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><br><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener">${escapeHtml(address)} ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
   }).join("");
 }
 
@@ -235,7 +294,7 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     const pharmacy = item.pharmacy;
-    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details>بيانات الصيدلية</button></div><div class="pharmacy-details" hidden><strong>${escapeHtml(pharmacy.name)}</strong><span>العنوان: ${escapeHtml(pharmacy.address || "غير مسجل")}</span><a href="tel:${escapeHtml(String(pharmacy.contact || "").replace(/[^\d+]/g, ""))}">رقم التواصل: ${escapeHtml(pharmacy.contact || "غير مسجل")}</a>${pharmacy.locationUrl ? `<a href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة</a>` : ""}</div>` : "";
+    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button></div>` : "";
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${details}</article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
@@ -286,7 +345,13 @@ function renderAccountProfile() {
 
 function renderDonationHistory() {
   const container = document.querySelector("#donation-history");
-  if (container) container.innerHTML = "";
+  if (!container) return;
+  const labels = { pending: ["قيد المراجعة", "pending"], accepted: ["تم قبول التبرع", "accepted"], completed: ["تم التسليم", "completed"], rejected: ["لم يتم القبول", "rejected"] };
+  if (!state.donations.length) {
+    container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي حالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
+    return;
+  }
+  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">الإشعارات</a></div></article>`; }).join("");
 }
 
 function updateStats() {
@@ -382,7 +447,9 @@ function setupVoiceSearch() {
   recognition.lang = "ar-EG";
   recognition.interimResults = false;
   recognition.onresult = (event) => {
-    searchInput.value = event.results[0][0].transcript;
+    const transcript = event.results[0][0].transcript.trim();
+    const candidate = findMedicineFromText(transcript);
+    searchInput.value = candidate?.["اسم الدواء"] || transcript;
     performSearch(searchInput.value);
   };
   recognition.onerror = () => showToast("ما قدرناش نسمع بوضوح، جرّب تكتب اسم الدواء");
@@ -536,14 +603,16 @@ function setupDonationAndAssistant() {
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
-    if (!/^\d{14}$/.test(nationalId)) { showToast("الرقم القومي لازم يكون 14 رقم."); return; }
+    const imageFile = document.querySelector("#donation-image")?.files?.[0];
+    const imageData = await readDonationImage(imageFile);
+    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
     loadExternalPharmacies(area, latitude && longitude ? { latitude, longitude } : null).then(() => renderDonationResults(rows[0].medicine, area));
     try {
       const responses = [];
       for (const item of rows) {
-        const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...item, area, nationalId, latitude, longitude }) });
+        const response = await fetch("/api/donations", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...item, area, nationalId, latitude, longitude, imageData }) });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "تعذر تسجيل طلب التبرع.");
         responses.push(payload.request);
@@ -575,7 +644,7 @@ function setupDonationAndAssistant() {
       try {
         const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
         const payload = await response.json();
-        document.querySelector("#donation-area").value = payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
+        document.querySelector("#donation-area").value = payload.displayName || payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
         showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
       } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
     }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { timeout: 10000, maximumAge: 60000 });
@@ -681,10 +750,14 @@ function setupEvents() {
   document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-pharmacy-details]");
     if (!button) return;
-    const details = button.closest(".notification-item")?.querySelector(".pharmacy-details");
-    if (!details) return;
-    details.hidden = !details.hidden;
-    button.textContent = details.hidden ? "بيانات الصيدلية" : "إخفاء البيانات";
+    const item = state.notifications.find((notification) => String(notification.id) === String(button.dataset.notificationId));
+    const pharmacy = item?.pharmacy;
+    const dialog = document.querySelector("#pharmacy-details-dialog");
+    const content = document.querySelector("#pharmacy-details-dialog-content");
+    if (!dialog || !content || !pharmacy) return;
+    const phone = String(pharmacy.contact || "").replace(/[^\d+]/g, "");
+    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b><a href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "غير مسجل")}</a></p>${pharmacy.locationUrl ? `<a class="dialog-map-link" href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>` : ""}`;
+    dialog.showModal();
   });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   document.querySelector("#command-search").addEventListener("input", (event) => {

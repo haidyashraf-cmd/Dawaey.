@@ -650,7 +650,7 @@ document.addEventListener("click", (event) => {
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         state.pharmacyCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`pharmacy near ${coords.latitude},${coords.longitude}`)}`;
+        const mapUrl = `https://www.google.com/maps/search/pharmacy/@${coords.latitude},${coords.longitude},15z`;
         if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
         const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=6000`, { credentials: "same-origin" });
         const payload = await response.json();

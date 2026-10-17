@@ -660,7 +660,7 @@ document.addEventListener("click", (event) => {
         renderPharmacies();
         showToast(`ظهر ${formatNumber(state.externalPharmacies.length)} صيدلية مسماة قريبة.`);
       } catch (error) { showToast(error.message || "تعذر تحميل صيدليات GPS."); }
-    }, () => { showToast("الموقع غير متاح؛ الخريطة العامة ما زالت مفتوحة."); }, { enableHighAccuracy: true, timeout: 7000, maximumAge: 300000 });
+    }, () => { showToast("الموقع غير متاح؛ الخريطة العامة ما زالت مفتوحة."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
 });
 

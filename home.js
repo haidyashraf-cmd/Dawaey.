@@ -85,7 +85,23 @@ function findMedicineFromText(text) {
     if (!best || match.score > best.score || (match.score === best.score && phrase.length > best.length)) best = { match, score: match.score, length: phrase.length };
     if (match.score === 100) break;
   }
-  return best?.match || null;
+  if (best?.match) return best.match;
+  const ocrTokens = words.map((word) => normalize(word)).filter((word) => word.length >= 4);
+  let fuzzy = null;
+  for (const record of getRecords()) {
+    const nameTokens = normalize(record["اسم الدواء"]).split(" ").filter((word) => word.length >= 4);
+    for (const nameToken of nameTokens.slice(0, 3)) {
+      for (const ocrToken of ocrTokens) {
+        const distance = editDistance(nameToken, ocrToken);
+        const limit = nameToken.length >= 8 ? 2 : 1;
+        if (distance <= limit) {
+          const score = 40 + nameToken.length - distance;
+          if (!fuzzy || score > fuzzy.score) fuzzy = { match: record, score };
+        }
+      }
+    }
+  }
+  return fuzzy?.match || null;
 }
 
 async function searchFromPhoto(file) {
@@ -93,9 +109,15 @@ async function searchFromPhoto(file) {
   try {
     const Tesseract = await loadOcrScript();
     const image = await prepareMedicineImage(file);
-    const result = await Tesseract.recognize(image, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
-    const text = result.data.text.replace(/\s+/g, " ").trim();
-    const candidate = findMedicineFromText(text);
+    const options = { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, preserve_interword_spaces: 1 };
+    const first = await Tesseract.recognize(image, "eng+ara", { ...options, tessedit_pageseg_mode: 6 });
+    let text = first.data.text.replace(/\s+/g, " ").trim();
+    let candidate = findMedicineFromText(text);
+    if (!candidate) {
+      const second = await Tesseract.recognize(image, "eng+ara", { ...options, tessedit_pageseg_mode: 11 });
+      text = `${text} ${second.data.text.replace(/\s+/g, " ").trim()}`.trim();
+      candidate = findMedicineFromText(text);
+    }
     if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
   } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }

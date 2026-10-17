@@ -987,7 +987,15 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 directory = published.get("sheets", {}).get("بيانات الصيداليات", [])
             except (OSError, json.JSONDecodeError, AttributeError):
                 directory = []
-            self.send_json(200, {"source": f"المخزون والتوريد من ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": json.loads(uploaded["inventory_json"]), "طلبات التوريد": json.loads(uploaded["supply_json"]), "بيانات الصيداليات": directory}})
+            inventory_rows = json.loads(uploaded["inventory_json"])
+            supply_rows = json.loads(uploaded["supply_json"])
+            # Older pharmacy uploads may still carry the previous threshold of 10.
+            # Normalize the displayed/reorder threshold without changing quantities.
+            for row in inventory_rows:
+                row["الحد الأدنى"] = 60
+            for row in supply_rows:
+                row["الحد الأدنى"] = 60
+            self.send_json(200, {"source": f"المخزون والتوريد من ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": inventory_rows, "طلبات التوريد": supply_rows, "بيانات الصيداليات": directory}})
             return
         self.handle_bootstrap()
 

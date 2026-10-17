@@ -33,18 +33,8 @@ OAUTH_STATE_COOKIE = "dawaey_google_state"
 OAUTH_STATE_SECONDS = 600
 PBKDF2_ITERATIONS = 310_000
 GEOCODE_LOCK = threading.Lock()
-NEARBY_CACHE: dict[tuple[float, float, int], tuple[float, list[dict]]] = {}
 def valid_egyptian_national_id(value: str) -> bool:
-    if not re.fullmatch(r"[23]\d{13}", value):
-        return False
-    century = 1900 if value[0] == "2" else 2000
-    year, month, day = century + int(value[1:3]), int(value[3:5]), int(value[5:7])
-    try:
-        import datetime
-        datetime.date(year, month, day)
-    except (ValueError, OverflowError):
-        return False
-    return True
+    return bool(re.fullmatch(r"[23]\d{13}", value))
 LAST_GEOCODE_REQUEST = 0.0
 TELEGRAM_OFFSET = 0
 TELEGRAM_THREAD_STARTED = False
@@ -150,8 +140,6 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN longitude REAL")
         if "image_data" not in donation_columns:
             connection.execute("ALTER TABLE donation_requests ADD COLUMN image_data TEXT NOT NULL DEFAULT ''")
-        if "donor_name" not in donation_columns:
-            connection.execute("ALTER TABLE donation_requests ADD COLUMN donor_name TEXT NOT NULL DEFAULT ''")
         pharmacy_columns = {row["name"] for row in connection.execute("PRAGMA table_info(pharmacy_applications)").fetchall()}
         if "latitude" not in pharmacy_columns:
             connection.execute("ALTER TABLE pharmacy_applications ADD COLUMN latitude REAL")
@@ -186,7 +174,7 @@ def password_digest(password: str, salt: bytes) -> bytes:
 def external_json_request(url: str, payload: dict, headers: dict | None = None) -> dict:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(url, data=body, headers={"Content-Type": "application/json", **(headers or {})}, method="POST")
-    with urlopen(request, timeout=6) as response:
+    with urlopen(request, timeout=12) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -566,7 +554,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
             raise ValueError("تعذر قراءة الطلب.") from error
-        if length < 1 or length > 8 * 1024 * 1024:
+        if length < 1 or length > 64_000:
             raise ValueError("حجم الطلب غير صالح.")
         try:
             payload = json.loads(self.rfile.read(length))
@@ -734,7 +722,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         return {
             "id": row["id"],
             "medicine": row["medicine"],
-            "donorName": row["donor_name"] if "donor_name" in row.keys() else "",
             "area": row["area"],
             "quantity": row["quantity"],
             "unit": row["unit"],
@@ -759,20 +746,19 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     self.send_json(403, {"error": "حساب الصيدلية غير معتمد."})
                     return
                 rows = connection.execute(
-                    "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
             elif account["role"] == "patient":
                 rows = connection.execute(
-                    "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
+                    "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at "
                     "FROM donation_requests WHERE account_id = ? ORDER BY created_at DESC LIMIT 50",
                     (account["id"],),
                 ).fetchall()
             else:
                 self.send_json(403, {"error": "هذه الخدمة متاحة للمريض أو الصيدلية فقط."})
                 return
-        requests = [self.donation_public(row) for row in rows]
-        self.send_json(200, {"requests": requests})
+        self.send_json(200, {"requests": [self.donation_public(row) for row in rows]})
 
     def handle_create_donation(self, payload: dict) -> None:
         medicine = str(payload.get("medicine", "")).strip()
@@ -804,7 +790,6 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         donation_id = f"don-{secrets.token_urlsafe(12)}"
         token = self.get_session_token()
         account_id = None
-        donor_name = str(payload.get("donorName", "")).strip()[:120]
         with closing(connect_database()) as connection, connection:
             if token:
                 token_hash = hashlib.sha256(token.encode("ascii", errors="ignore")).hexdigest()
@@ -813,16 +798,13 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (token_hash, now),
                 ).fetchone()
                 account_id = account["account_id"] if account else None
-                if account_id and not donor_name:
-                    account_row = connection.execute("SELECT full_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
-                    donor_name = str(account_row["full_name"] if account_row else "").strip()[:120]
             connection.execute(
-                "INSERT INTO donation_requests(id, account_id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (donation_id, account_id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, now, now),
+                "INSERT INTO donation_requests(id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (donation_id, account_id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, now, now),
             )
             row = connection.execute(
-                "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(201, {"request": self.donation_public(row)})
@@ -851,7 +833,7 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                     (previous["account_id"], "تم قبول تبرعك", self.donation_acceptance_message(previous["medicine"], pharmacy), donation_id, pharmacy["pharmacy_name"], pharmacy["whatsapp"], f"{pharmacy['address']}، {pharmacy['district']}", pharmacy["location_url"] or (f"https://www.google.com/maps?q={pharmacy['latitude']},{pharmacy['longitude']}" if pharmacy["latitude"] is not None and pharmacy["longitude"] is not None else ""), now),
                 )
             row = connection.execute(
-                "SELECT id, medicine, donor_name, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
+                "SELECT id, medicine, area, quantity, unit, national_id, latitude, longitude, image_data, status, created_at, updated_at FROM donation_requests WHERE id = ?",
                 (donation_id,),
             ).fetchone()
         self.send_json(200, {"request": self.donation_public(row)})
@@ -1061,39 +1043,34 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             radius = min(max(int(float(parameters.get("radius", ["15000"])[0])), 1000), 25000)
         except ValueError:
             radius = 10000
-        cache_key = (round(latitude, 3), round(longitude, 3), radius)
-        cached = NEARBY_CACHE.get(cache_key)
-        if cached and time.time() - cached[0] < 300:
-            self.send_json(200, {"pharmacies": cached[1], "source": "OpenStreetMap cache", "latitude": latitude, "longitude": longitude})
-            return
-        overpass_query = f"[out:json][timeout:15];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
+        overpass_query = f"[out:json][timeout:18];nwr[amenity=pharmacy](around:{radius},{latitude},{longitude});out center tags;"
+        request = Request("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
         payload = None
-        endpoints = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter")
-        for endpoint in endpoints:
+        for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
             try:
-                request = Request(endpoint, data=urllib.parse.urlencode({"data": overpass_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
-                with urlopen(request, timeout=12) as response:
-                    candidate = json.loads(response.read().decode("utf-8"))
-                if candidate.get("elements"):
-                    payload = candidate
-                    break
-                if payload is None:
-                    payload = candidate
+                request.full_url = endpoint
+                with urlopen(request, timeout=24) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
-                print(f"Overpass provider failed ({endpoint}): {error}", file=sys.stderr)
-        if payload is None or not payload.get("elements"):
-            wide_radius = min(max(radius * 2, 16000), 22000)
-            wide_query = f"[out:json][timeout:10];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
-            for endpoint in endpoints:
+                print(f"Overpass provider failed: {error}", file=sys.stderr)
+        if payload is not None and not payload.get("elements"):
+            # An exact street geocode can land on a small map tile with no
+            # pharmacy nodes. Retry around the same point before declaring it
+            # empty, so a full address still returns nearby pharmacies.
+            wide_radius = min(max(radius * 2, 30000), 50000)
+            wide_query = f"[out:json][timeout:25];nwr[amenity=pharmacy](around:{wide_radius},{latitude},{longitude});out center tags;"
+            for endpoint in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.nchc.org.tw/api/interpreter"):
                 try:
                     wide_request = Request(endpoint, data=urllib.parse.urlencode({"data": wide_query}).encode("utf-8"), headers={"User-Agent": "Dawaey/1.0 pharmacy-directory", "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
-                    with urlopen(wide_request, timeout=7) as response:
+                    with urlopen(wide_request, timeout=28) as response:
                         candidate = json.loads(response.read().decode("utf-8"))
                     if candidate.get("elements"):
                         payload = candidate
                         break
                 except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
-                    print(f"Wide Overpass provider failed ({endpoint}): {error}", file=sys.stderr)
+                    print(f"Wide Overpass provider failed: {error}", file=sys.stderr)
+
         if payload is None or not payload.get("elements"):
             # Nominatim is slower and returns fewer records, but keeps the search
             # useful when public Overpass instances are busy or unavailable.
@@ -1109,9 +1086,9 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
             })
             fallback_url = f"https://nominatim.openstreetmap.org/search?{fallback_parameters}"
             try:
-                with urlopen(Request(fallback_url, headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"}), timeout=4) as response:
+                with urlopen(Request(fallback_url, headers={"User-Agent": "Dawaey/1.0 pharmacy-directory"}), timeout=20) as response:
                     fallback_places = json.loads(response.read().decode("utf-8"))
-                payload = {"elements": [{"tags": {"name": place.get("name") or "", "display_name": place.get("display_name", ""), "addr:street": place.get("display_name", ""), "phone": (place.get("extratags") or {}).get("phone", "")}, "lat": place.get("lat"), "lon": place.get("lon")} for place in fallback_places]}
+                payload = {"elements": [{"tags": {"name": place.get("name") or "صيدلية قريبة", "display_name": place.get("display_name", ""), "addr:street": place.get("display_name", ""), "phone": (place.get("extratags") or {}).get("phone", "")}, "lat": place.get("lat"), "lon": place.get("lon")} for place in fallback_places]}
             except (OSError, URLError, TimeoutError, json.JSONDecodeError) as error:
                 print(f"Nominatim pharmacy fallback failed: {error}", file=sys.stderr)
                 self.send_json(503, {"error": "خدمة دليل الصيدليات غير متاحة مؤقتًا؛ جرّب بعد لحظات."})
@@ -1120,19 +1097,46 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
         pharmacies = []
         for item in payload.get("elements", []):
             tags = item.get("tags") or {}
-            name = (tags.get("name:ar") or tags.get("name") or "").strip()
-            normalized_name = " ".join(name.casefold().split())
-            invalid_name_terms = {"صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"}
-            if len(normalized_name) < 2 or any(term == normalized_name or term in normalized_name for term in invalid_name_terms):
-                continue
+            name = tags.get("name:ar") or tags.get("name") or "صيدلية قريبة"
             address = " - ".join(part for part in (tags.get("addr:state"), tags.get("addr:city"), tags.get("addr:street")) if part) or area or "بالقرب من موقعك"
             phone = tags.get("phone") or tags.get("contact:phone") or "رقم غير مدرج"
-            if len(name) < 2:
-                continue
             pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": phone, "source": "OpenStreetMap", "lat": item.get("lat") or (item.get("center") or {}).get("lat"), "lon": item.get("lon") or (item.get("center") or {}).get("lon")})
-        result_pharmacies = pharmacies[:100]
-        NEARBY_CACHE[cache_key] = (time.time(), result_pharmacies)
-        self.send_json(200, {"pharmacies": result_pharmacies, "source": "OpenStreetMap", "latitude": latitude, "longitude": longitude})
+
+        # Keep the application's own Egyptian pharmacy directory useful when
+        # public OSM providers time out or have sparse coverage. Only records
+        # with real coordinates are included and they are sorted by distance.
+        try:
+            published = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+            directory = published.get("sheets", {}).get("بيانات الصيداليات", [])
+            local_candidates = []
+            for record in directory:
+                local_lat = record.get("خط العرض (Latitude)")
+                local_lon = record.get("خط الطول (Longitude)")
+                try:
+                    local_lat, local_lon = float(local_lat), float(local_lon)
+                except (TypeError, ValueError):
+                    continue
+                if not (-90 <= local_lat <= 90 and -180 <= local_lon <= 180):
+                    continue
+                dlat = math.radians(local_lat - latitude)
+                dlon = math.radians(local_lon - longitude)
+                a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(latitude)) * math.cos(math.radians(local_lat)) * math.sin(dlon / 2) ** 2
+                distance_km = 6371 * 2 * math.asin(math.sqrt(a))
+                if distance_km <= max(radius / 1000, 25):
+                    local_candidates.append((distance_km, record))
+            local_candidates.sort(key=lambda item: item[0])
+            existing_keys = {(str(item.get("اسم الصيدلية", "")).strip().casefold(), str(item.get("المنطقة / العنوان المتوقع", "")).strip().casefold()) for item in pharmacies}
+            for distance_km, record in local_candidates[:100]:
+                name = str(record.get("اسم الصيدلية") or "صيدلية قريبة")
+                address = str(record.get("المنطقة / العنوان المتوقع") or area or "بالقرب من موقعك")
+                key = (name.strip().casefold(), address.strip().casefold())
+                if key in existing_keys:
+                    continue
+                existing_keys.add(key)
+                pharmacies.append({"اسم الصيدلية": name, "المنطقة / العنوان المتوقع": address, "رقم التليفون / الخط الساخن": str(record.get("رقم التليفون / الخط الساخن") or "رقم غير مدرج"), "source": "Dawaey directory", "lat": local_lat, "lon": local_lon, "distanceKm": round(distance_km, 2)})
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+            pass
+        self.send_json(200, {"pharmacies": pharmacies[:100], "source": "OpenStreetMap + Dawaey directory", "latitude": latitude, "longitude": longitude})
 
     def handle_area(self) -> None:
         global LAST_GEOCODE_REQUEST

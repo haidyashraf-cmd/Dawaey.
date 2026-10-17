@@ -645,13 +645,12 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-retry]")) startApp();
   if (event.target.closest("#pharmacy-gps")) {
     if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
-    const mapWindow = window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       try {
         state.pharmacyCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const mapUrl = `https://www.google.com/maps/search/pharmacy/@${coords.latitude},${coords.longitude},15z`;
-        if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
+        const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coords.latitude},${coords.longitude},15z`;
+        window.open(mapUrl, "_blank", "noopener,noreferrer");
         const response = await fetch(`/api/nearby-pharmacies?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=6000`, { credentials: "same-origin" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "تعذر تحميل الصيدليات القريبة.");

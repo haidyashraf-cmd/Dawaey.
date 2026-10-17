@@ -989,12 +989,11 @@ class DawaeyHandler(SimpleHTTPRequestHandler):
                 directory = []
             inventory_rows = json.loads(uploaded["inventory_json"])
             supply_rows = json.loads(uploaded["supply_json"])
-            # Older pharmacy uploads may still carry the previous threshold of 10.
-            # Normalize the displayed/reorder threshold without changing quantities.
+            # Keep the dashboard reorder threshold at the requested value.
             for row in inventory_rows:
-                row["الحد الأدنى"] = 60
+                row["الحد الأدنى"] = 10
             for row in supply_rows:
-                row["الحد الأدنى"] = 60
+                row["الحد الأدنى"] = 10
             self.send_json(200, {"source": f"المخزون والتوريد من ملف الصيدلية: {uploaded['filename']}", "uploadedAt": uploaded["uploaded_at"], "sheets": {"الاصناف والكميات": inventory_rows, "طلبات التوريد": supply_rows, "بيانات الصيداليات": directory}})
             return
         self.handle_bootstrap()

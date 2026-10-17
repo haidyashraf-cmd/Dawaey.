@@ -2,23 +2,14 @@ const INVENTORY_SHEET = "الاصناف والكميات";
 const SUPPLY_SHEET = "طلبات التوريد";
 const PHARMACY_SHEET = "بيانات الصيداليات";
 const numberFormat = new Intl.NumberFormat("ar-EG");
-const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [], userCoordinates: null, areaFromGps: false };
+const state = { inventory: [], supplyByNumber: new Map(), pharmacies: [], matches: [], saved: new Set(), notifications: [], donations: [], onboardingStep: 0, recognition: null, user: null, areaQuery: "", selectedMedicine: null, externalPharmacies: [] };
 const aliases = new Map([
   ["بنادول", "panadol"], ["بانادول", "panadol"], ["كاتافلام", "cataflam"], ["كتافلام", "cataflam"],
   ["بروفين", "brufen"], ["فولتارين", "voltaren"], ["ادول", "adol"], ["أدول", "adol"],
   ["اوجمنتين", "augmentin"], ["أوجمنتين", "augmentin"], ["كونجستال", "congestal"],
   ["فلاجيل", "flagyl"], ["موتيليوم", "motilium"], ["نوروڤين", "nurofen"], ["نيروفين", "nurofen"],
 ]);
-function validEgyptianNationalId(value) {
-  if (!/^[23]\d{13}$/.test(value)) return false;
-  const century = value[0] === "2" ? 1900 : 2000;
-  const year = century + Number(value.slice(1, 3));
-  const month = Number(value.slice(3, 5));
-  const day = Number(value.slice(5, 7));
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
+function validEgyptianNationalId(value) { return /^[23]\d{13}$/.test(value); }
 function readDonationImage(file) {
   if (!file) return Promise.resolve("");
   return new Promise((resolve) => {
@@ -26,24 +17,6 @@ function readDonationImage(file) {
     reader.onerror = () => resolve("");
     reader.onload = () => resolve(String(reader.result || ""));
     reader.readAsDataURL(file);
-  });
-}
-function prepareDonationImage(file) {
-  if (!file) return Promise.resolve("");
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      const scale = Math.min(1, 1400 / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.72));
-    };
-    image.onerror = () => { URL.revokeObjectURL(url); resolve(""); };
-    image.src = url;
   });
 }
 
@@ -72,15 +45,7 @@ function renderMedicineInfo(record) {
 
 function loadOcrScript() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    const timer = window.setTimeout(() => reject(new Error("ocr-timeout")), 30000);
-    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    script.crossOrigin = "anonymous";
-    script.onload = () => { window.clearTimeout(timer); resolve(window.Tesseract); };
-    script.onerror = () => { window.clearTimeout(timer); reject(new Error("ocr-load")); };
-    document.head.appendChild(script);
-  });
+  return new Promise((resolve, reject) => { const script = document.createElement("script"); script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"; script.onload = () => resolve(window.Tesseract); script.onerror = reject; document.head.appendChild(script); });
 }
 
 function prepareMedicineImage(file) {
@@ -88,11 +53,10 @@ function prepareMedicineImage(file) {
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-      const scale = longestSide > 1800 ? 1800 / longestSide : 1;
+      const scale = Math.min(2.4, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.width = Math.max(900, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(900, Math.round(image.naturalHeight * scale));
       const context = canvas.getContext("2d");
       context.fillStyle = "#fff";
       context.fillRect(0, 0, canvas.width, canvas.height);
@@ -129,15 +93,9 @@ async function searchFromPhoto(file) {
   try {
     const Tesseract = await loadOcrScript();
     const image = await prepareMedicineImage(file);
-    const result = await Tesseract.recognize(image, "eng+ara", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
+    const result = await Tesseract.recognize(image, "ara+eng", { logger: (message) => { if (message.status === "recognizing text" && message.progress > .7) showToast("قربنا نخلص قراءة العلبة..."); }, tessedit_pageseg_mode: 6, preserve_interword_spaces: 1 });
     const text = result.data.text.replace(/\s+/g, " ").trim();
-    const filenameText = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
-    const allText = normalize(`${text} ${filenameText}`);
-    const exact = getRecords().filter((record) => {
-      const name = normalize(record["اسم الدواء"]);
-      return name.length > 2 && (allText.includes(name) || name.split(" ").filter((word) => word.length > 2).every((word) => allText.includes(word)));
-    }).sort((left, right) => String(right["اسم الدواء"]).length - String(left["اسم الدواء"]).length)[0];
-    const candidate = exact || findMedicineFromText(`${text} ${filenameText}`);
+    const candidate = findMedicineFromText(text);
     if (!candidate) { showToast("الصورة اتقرت لكن الاسم مش واضح في سجل الأدوية؛ قرّب العلبة وصوّر الاسم أو اكتب الاسم يدويًا."); return; }
     searchInput.value = candidate["اسم الدواء"]; performSearch(candidate["اسم الدواء"]);
   } catch { showToast("تعذر قراءة العلبة. استخدم إضاءة أفضل وصوّر اسم الدواء كاملًا."); }
@@ -229,27 +187,10 @@ function renderMedicineCard(record) {
   </article>`;
 }
 
-function pharmacyName(pharmacy) {
-  return String(pharmacy?.["اسم الصيدلية"] || pharmacy?.name || "").trim();
-}
-function hasNamedPharmacy(pharmacy) {
-  const name = pharmacyName(pharmacy).toLocaleLowerCase().replace(/\s+/g, " ").trim();
-  return name.length > 1 && !["صيدلية", "صيدليه", "pharmacy", "drugstore", "unknown", "غير معروف", "بدون اسم", "بلا اسم", "غير مسمى", "unnamed", "no name"].some((term) => name === term || name.includes(term));
-}
-function pharmacyCoordinates(pharmacy) {
-  const latitude = Number(pharmacy?.["خط العرض (Latitude)"] ?? pharmacy?.latitude ?? pharmacy?.lat);
-  const longitude = Number(pharmacy?.["خط الطول (Longitude)"] ?? pharmacy?.longitude ?? pharmacy?.lon);
-  return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-}
-function pharmacyMapUrl(pharmacy, address = "") {
-  const coords = pharmacyCoordinates(pharmacy);
-  const query = coords ? `${coords.latitude},${coords.longitude}` : address;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
 function uniquePharmacies() {
   const unique = new Map();
-  for (const pharmacy of [...state.pharmacies, ...state.externalPharmacies].filter(hasNamedPharmacy)) {
-    const key = [pharmacyName(pharmacy), pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join("|");
+  for (const pharmacy of [...state.pharmacies, ...state.externalPharmacies]) {
+    const key = [pharmacy["اسم الصيدلية"], pharmacy["المنطقة / العنوان المتوقع"], pharmacy["رقم التليفون / الخط الساخن"]].join("|");
     if (!unique.has(key)) unique.set(key, pharmacy);
   }
   return [...unique.values()];
@@ -267,10 +208,10 @@ function getNearbyPharmacies(query = state.areaQuery) {
     const segments = area.split(/\s*[-–/]\s*/).map(simplifyArea);
     return area.includes(normalize(query)) || segments.some((segment) => segment.includes(normalizedQuery) || normalizedQuery.includes(segment));
   });
-  // Remote results are used only after the user explicitly chose GPS. Typed
-  // locations stay limited to matching directory records.
-  if (state.areaFromGps && state.externalPharmacies.length && query === state.areaQuery) {
-    return [...directoryMatches, ...state.externalPharmacies.filter(hasNamedPharmacy)];
+  // Remote results were already located by GPS/geocoding; do not hide them
+  // because a full street address is longer than the directory label.
+  if (state.externalPharmacies.length && query === state.areaQuery) {
+    return [...directoryMatches, ...state.externalPharmacies];
   }
   return directoryMatches;
 }
@@ -288,19 +229,22 @@ function nearbyPharmacyMarkup(record) {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
     const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? area);
-    const mapUrl = pharmacyMapUrl(pharmacy, address);
-    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacyName(pharmacy))}</strong><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener" aria-label="فتح عنوان ${escapeHtml(pharmacy["اسم الصيدلية"])} على الخريطة">${escapeHtml(address)} <span aria-hidden="true">⌖</span></a><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
+    const latitude = Number(pharmacy["خط العرض (Latitude)"]);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"]);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<article class="nearby-pharmacy"><div class="nearby-pharmacy-copy"><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener" aria-label="فتح عنوان ${escapeHtml(pharmacy["اسم الصيدلية"])} على الخريطة">${escapeHtml(address)} <span aria-hidden="true">⌖</span></a><span>اتصل للتأكد من توفر الدواء</span></div>${dial ? `<a class="nearby-call" href="tel:${escapeHtml(dial)}" aria-label="اتصل بـ${escapeHtml(pharmacy["اسم الصيدلية"])}">اتصال</a>` : `<span class="nearby-phone">${escapeHtml(phone || "رقم غير مدرج")}</span>`}</article>`;
   }).join("");
   return `<section class="medicine-nearby"><div class="nearby-heading"><strong>الصيدليات الأقرب حسب المنطقة</strong><span>${escapeHtml(area)}</span></div><div class="nearby-pharmacy-list">${pharmacies}</div><p class="nearby-caveat">الترتيب حسب المنطقة المسجلة، مش المسافة الدقيقة. ملف المصدر لا يربط مخزون الدواء بالفرع.</p></section>`;
 }
 
 async function loadExternalPharmacies(area = "", coords = null) {
-  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=10000` : `area=${encodeURIComponent(area)}&radius=10000`;
+  const parameters = coords ? `lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}&radius=25000` : `area=${encodeURIComponent(area)}&radius=25000`;
   try {
     const response = await fetch(`/api/nearby-pharmacies?${parameters}`, { credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "تعذر تحميل صيدليات GPS.");
-    state.externalPharmacies = (payload.pharmacies || []).filter(hasNamedPharmacy);
+    state.externalPharmacies = payload.pharmacies || [];
     renderAreaResults(area || state.areaQuery);
     if (state.matches.length) renderMedicineResults();
     return state.externalPharmacies;
@@ -326,8 +270,11 @@ function renderAreaResults(query = "") {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
     const address = String(pharmacy["المنطقة / العنوان المتوقع"] ?? query);
-    const mapUrl = pharmacyMapUrl(pharmacy, address);
-    return `<div class="area-result"><span><strong>${escapeHtml(pharmacyName(pharmacy))}</strong><br><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener">${escapeHtml(address)} ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
+    const latitude = Number(pharmacy["خط العرض (Latitude)"] ?? pharmacy.latitude ?? pharmacy.lat);
+    const longitude = Number(pharmacy["خط الطول (Longitude)"] ?? pharmacy.longitude ?? pharmacy.lon);
+    const mapQuery = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : address;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+    return `<div class="area-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><br><a class="nearby-address" href="${mapUrl}" target="_blank" rel="noopener">${escapeHtml(address)} ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<span>${escapeHtml(phone)}</span>`}</div>`;
   }).join("");
 }
 
@@ -347,27 +294,24 @@ function renderNotifications() {
   count.hidden = unread === 0;
   panel.innerHTML = state.notifications.length ? state.notifications.map((item) => {
     const pharmacy = item.pharmacy;
-    const contact = pharmacy?.contact ? String(pharmacy.contact).replace(/[^\d+]/g, "") : "";
-    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button>${contact ? `<a class="notification-call" href="tel:${escapeHtml(contact)}">اتصال مباشر</a>` : ""}</div>` : "";
+    const details = pharmacy ? `<div class="notification-actions"><button type="button" data-pharmacy-details data-notification-id="${escapeHtml(item.id)}">بيانات الصيدلية</button></div>` : "";
     return `<article class="notification-item ${item.isRead ? "is-read" : ""}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt)))}</small>${details}</article>`;
   }).join("") : '<p class="notification-empty">لا توجد إشعارات جديدة.</p>';
 }
 
 async function loadPatientData() {
-  const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch(`/api/saved-medicines?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" }), fetch(`/api/notifications?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" }), fetch(`/api/donations?t=${Date.now()}`, { credentials: "same-origin", cache: "no-store" })]);
+  const [savedResponse, notificationsResponse, donationsResponse] = await Promise.all([fetch("/api/saved-medicines", { credentials: "same-origin" }), fetch("/api/notifications", { credentials: "same-origin" }), fetch("/api/donations", { credentials: "same-origin" })]);
   if (savedResponse.ok) {
     const savedPayload = await savedResponse.json();
-    state.saved = new Set((savedPayload.medicineKeys || []).map(String));
-  } else {
-    state.saved = new Set();
+    const serverSaved = new Set((savedPayload.medicineKeys || []).map(String));
+    let localSaved = new Set();
+    try { localSaved = new Set(JSON.parse(localStorage.getItem("dawaey-saved-medications") ?? "[]").map(String)); } catch { /* The server list remains available. */ }
+    state.saved = new Set([...serverSaved, ...localSaved]);
+    for (const key of localSaved) if (!serverSaved.has(key)) persistSavedMedicine(key, true).catch(() => {});
   }
   if (notificationsResponse.ok) {
     const notificationPayload = await notificationsResponse.json();
     state.notifications = notificationPayload.notifications || [];
-    try {
-      const readIds = new Set(JSON.parse(localStorage.getItem(`dawaey-read-notifications:${state.user?.id}`) || "[]").map(String));
-      state.notifications = state.notifications.map((item) => readIds.has(String(item.id)) ? { ...item, isRead: true } : item);
-    } catch { /* حالة القراءة محفوظة على الخادم */ }
   }
   if (donationsResponse.ok) {
     const donationPayload = await donationsResponse.json();
@@ -392,9 +336,13 @@ function updateSavedList() {
 function renderAccountProfile() {
   const savedCount = document.querySelector("#account-saved-count");
   const donationCount = document.querySelector("#account-donation-count");
+  const preview = document.querySelector("#account-donation-preview");
   if (savedCount) savedCount.textContent = String(state.saved.size);
   if (donationCount) donationCount.textContent = String(state.donations.length);
+  if (!preview) return;
+
 }
+
 function renderDonationHistory() {
   const container = document.querySelector("#donation-history");
   if (!container) return;
@@ -403,7 +351,7 @@ function renderDonationHistory() {
     container.innerHTML = '<div class="history-empty"><span>♧</span><strong>لسه مفيش تبرعات</strong><p>لما تسجل أول تبرع، هتلاقي حالته هنا.</p><a href="#donate-medicine">ابدأ تبرعك الأول</a></div>';
     return;
   }
-  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications" data-open-notifications>الإشعارات</a></div></article>`; }).join("");
+  container.innerHTML = state.donations.map((item) => { const status = labels[item.status] || ["جديد", "pending"]; return `<article class="donation-history-card"><div class="history-card-top"><span class="history-icon">♧</span><span class="history-status ${status[1]}">${status[0]}</span></div><h3>${escapeHtml(item.medicine || "دواء غير محدد")}</h3><div class="history-meta"><span>⌖ ${escapeHtml(item.area || "مكان غير محدد")}</span><span>▣ ${escapeHtml(item.quantity || "—")} ${escapeHtml(item.unit || "")}</span><span>◷ ${escapeHtml(new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(item.createdAt || Date.now())))}</span></div><div class="history-card-footer"><small>${item.status === "accepted" ? "تم إشعارك ببيانات الصيدلية في الإشعارات" : "سيظهر التحديث هنا عند مراجعة الطلب"}</small><a href="#patient-notifications">الإشعارات</a></div></article>`; }).join("");
 }
 
 function updateStats() {
@@ -450,9 +398,6 @@ function performSearch(query) {
   resultsSection.hidden = false;
   suggestionList.hidden = true;
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  if (state.areaQuery && state.areaFromGps) {
-    loadExternalPharmacies(state.areaQuery, state.userCoordinates).then(() => { renderAreaResults(state.areaQuery); renderMedicineResults(); });
-  }
 }
 
 function renderMedicineResults() {
@@ -590,20 +535,15 @@ function setupObservers() {
 
 function renderDonationResults(medicine, area) {
   const container = document.querySelector("#donation-results");
-  const entries = getNearbyPharmacies(area).filter(hasNamedPharmacy).slice(0, 12);
+  const entries = getNearbyPharmacies(area).slice(0, 12);
   if (!medicine || !area) { container.innerHTML = "<p>اكتب اسم الدواء والمنطقة أو استخدم GPS لعرض الصيدليات القريبة.</p>"; return; }
   const matches = findMatches(medicine);
   const medicineName = matches[0]?.["اسم الدواء"] || medicine;
   if (!entries.length) { container.innerHTML = `<p>لم نجد صيدليات في المكان حاليًا. جرّب اسم منطقة أو استخدم GPS مرة أخرى.</p>`; return; }
-  const donorLat = document.querySelector("#donation-latitude")?.value || "";
-  const donorLon = document.querySelector("#donation-longitude")?.value || "";
-  const donorMapLink = donorLat && donorLon ? `<a class="donation-location-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donorLat},${donorLon}`)}" target="_blank" rel="noopener">فتح موقعي الحقيقي على الخريطة</a>` : "";
-  container.innerHTML = `<div class="donation-result-title"><strong>صيدليات قريبة للتواصل بخصوص ${escapeHtml(medicineName)}</strong><small>${numberFormat.format(entries.length)} نتيجة من الدليل وOpenStreetMap</small>${donorMapLink}</div>` + entries.map((pharmacy) => {
+  container.innerHTML = `<div class="donation-result-title"><strong>صيدليات قريبة للتواصل بخصوص ${escapeHtml(medicineName)}</strong><small>${numberFormat.format(entries.length)} نتيجة من الدليل وOpenStreetMap</small></div>` + entries.map((pharmacy) => {
     const phone = String(pharmacy["رقم التليفون / الخط الساخن"] ?? "");
     const dial = (phone.split("/")[0].match(/[\d+()\-\s]+/)?.[0] ?? "").replace(/[^\d+]/g, "");
-    const address = String(pharmacy["المنطقة / العنوان المتوقع"] || area);
-    const mapLink = pharmacyMapUrl(pharmacy, address);
-    return `<div class="donation-result"><span><strong>${escapeHtml(pharmacyName(pharmacy))}</strong><small>${escapeHtml(address)}</small><a class="donation-location-link" href="${mapLink}" target="_blank" rel="noopener">فتح الموقع الحقيقي على الخريطة ⌖</a></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<em>${escapeHtml(phone || "رقم غير مدرج")}</em>`}</div>`;
+    return `<div class="donation-result"><span><strong>${escapeHtml(pharmacy["اسم الصيدلية"])}</strong><small>${escapeHtml(pharmacy["المنطقة / العنوان المتوقع"])}</small></span>${dial ? `<a href="tel:${escapeHtml(dial)}">اتصال</a>` : `<em>${escapeHtml(phone || "رقم غير مدرج")}</em>`}</div>`;
   }).join("");
 }
 
@@ -627,50 +567,22 @@ function assistantReply(question) {
     { words: ["مغص", "تقلص", "تقلصات", "الم بطن", "ألم بطن", "وجع بطن"], category: "مغص أو تقلصات", options: "يمكن سؤال الصيدلي عن هيوسين بيوتيل بروميد مثل Buscopan للتقلصات، لكن ألم البطن المستمر أو الشديد يحتاج تقييم السبب أولًا" },
     { words: ["التهاب حلق", "زور", "حلق", "الم حلق", "ألم حلق"], category: "ألم أو التهاب الحلق", options: "يمكن سؤال الصيدلي عن أقراص استحلاب ومسكن مناسب، ولا تبدأ مضادًا حيويًا دون كشف" },
     { words: ["غثيان", "ترجيع", "قيء"], category: "غثيان أو قيء", options: "اسأل الصيدلي عن خيار مناسب، واهتم بالسوائل؛ القيء المتكرر أو المصحوب بدم يحتاج طوارئ" },
-    { words: ["اسهال", "إسهال", "بطنه سايبه", "مغص واسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
-    { words: ["وجع ضهر", "ألم ظهر", "ضهري", "ظهرى"], category: "ألم الظهر", options: "اسأل الصيدلي عن مسكن مناسب، واطلب كشفًا إذا كان الألم شديدًا أو بعد إصابة" },
-    { words: ["وجع ودن", "ألم أذن", "ودني", "ودانى"], category: "ألم الأذن", options: "لا تضع قطرات عشوائية؛ اسأل الصيدلي أو طبيب الأنف والأذن، خصوصًا مع إفرازات أو حرارة" },
-    { words: ["وجع سن", "ألم ضرس", "ضرسى", "سنانى"], category: "ألم الأسنان", options: "يمكن سؤال الصيدلي عن مسكن مناسب، لكن علاج السبب عند طبيب الأسنان ولا تبدأ مضادًا حيويًا من نفسك" },
-    { words: ["دوخه", "دوخة", "دايخ", "هبوط"], category: "دوخة أو هبوط", options: "اجلس واشرب سوائل إذا كنت واعيًا، وقِس الضغط أو السكر إن أمكن، واطلب مساعدة عاجلة إذا كان معها إغماء أو ضعف مفاجئ" },
-    { words: ["ارهاق", "تعب", "كسل", "جسمي مكسر", "تكسير"], category: "إرهاق أو تكسير بالجسم", options: "الراحة والسوائل وقياس الحرارة قد يساعدون، واستشر طبيبًا إذا استمر التعب أو صاحبه فقدان وزن أو ضيق نفس" },
-    { words: ["التهاب عين", "عينى", "عيني", "احمرار العين", "حرقان العين"], category: "أعراض العين", options: "تجنب استخدام قطرات المضاد أو الكورتيزون دون فحص، واطلب تقييمًا سريعًا عند ألم شديد أو ضعف نظر" },
-    { words: ["طفح", "حباية", "حبوب", "حكة جلد", "حساسية جلد"], category: "أعراض جلدية", options: "اسأل الصيدلي عن علاج مناسب حسب شكل الطفح، واطلب الطوارئ عند تورم الوجه أو صعوبة التنفس" },
-    { words: ["برد", "نزلة برد", "دور برد", "إنفلونزا", "انفلونزا"], category: "نزلة برد أو إنفلونزا محتملة", options: "الراحة والسوائل وقياس الحرارة مهمون؛ اسأل الصيدلي عن علاج للأعراض، ولا تبدأ مضادًا حيويًا لأن أغلب نزلات البرد فيروسية" },
-    { words: ["سكر", "السكر", "السكري", "مريض سكر", "داء السكري"], category: "السكري", options: "لا تغيّر علاج السكر أو جرعته من نفسك؛ راقب القياس والتزم بخطة الطبيب، واطلب المساعدة عند هبوط شديد أو اضطراب وعي" },
-    { words: ["ضغط", "ضغط الدم", "الضغط العالي", "ضغط واطي", "ارتفاع الضغط"], category: "ضغط الدم", options: "قِس الضغط بهدوء وأعد القياس، ولا توقف علاجك دون الطبيب؛ القراءة العالية جدًا مع ألم صدر أو ضيق نفس تستدعي الطوارئ" },
-    { words: ["ربو", "ازمة صدر", "أزمة صدر", "حساسية صدر", "نهجان مزمن"], category: "الربو أو حساسية الصدر", options: "استخدم بخاخك الموصوف فقط حسب خطة الطبيب، واطلب الطوارئ عند صعوبة الكلام أو ضيق النفس الشديد" },
-    { words: ["انيميا", "أنيميا", "فقر دم", "هيموجلوبين قليل"], category: "الأنيميا أو فقر الدم", options: "التشخيص يحتاج تحليل دم؛ لا تبدأ الحديد عشوائيًا، واستشر الطبيب لمعرفة السبب والعلاج المناسب" },
-    { words: ["قولون", "قولون عصبي", "القولون", "انتفاخ مزمن"], category: "القولون العصبي المحتمل", options: "راقب الأطعمة التي تزيد الأعراض واشرب سوائل، واطلب كشفًا عند نزيف أو فقدان وزن أو ألم مستمر" },
-    { words: ["التهاب معدة", "قرحة", "قرحة معدة", "جرثومة المعدة", "جرثومه المعده"], category: "مشكلات المعدة أو جرثومة محتملة", options: "لا تعتمد على علاج عشوائي؛ جرثومة المعدة تحتاج اختبارًا وخطة يحددها الطبيب، والطوارئ مطلوبة عند قيء دموي أو براز أسود" },
-    { words: ["التهاب جيوب", "جيوب انفية", "جيوب أنفية", "الجيوب"], category: "التهاب أو احتقان الجيوب الأنفية", options: "الغسول الملحي والسوائل قد يساعدان، واستشر الطبيب إذا استمرت الحرارة أو الألم أو ظهرت أعراض شديدة" },
-    { words: ["التهاب بول", "التهاب المسالك", "حرقان البول", "مسالك بولية"], category: "التهاب مسالك بولية محتمل", options: "يحتاج غالبًا تحليلًا وتقييمًا طبيًا، ولا تبدأ مضادًا حيويًا من نفسك؛ اطلب تقييمًا عاجلًا مع حرارة أو ألم بالجنب" },
+    { words: ["اسهال", "إسهال"], category: "إسهال", options: "ابدأ بمحلول الإماهة بعد سؤال الصيدلي، واطلب تقييمًا طبيًا عند وجود دم أو جفاف أو حرارة عالية" },
   ];
   const matched = advice.find((item) => item.words.some((word) => query.includes(normalize(word))));
   if (matched) {
-    const diseaseCare = {
-      "نزلة برد أو إنفلونزا محتملة": ["باراسيتامول للألم أو الحرارة بعد سؤال الصيدلي", "طبيب باطنة أو طبيب أسرة إذا استمرت الحرارة أو ساءت الحالة"],
-      "السكري": ["علاج السكر الموصوف لك فقط، ولا تغيّر الجرعة بنفسك", "طبيب باطنة أو طبيب غدد وسكر"],
-      "ضغط الدم": ["دواء الضغط الموصوف لك فقط، ولا توقفه دون الطبيب", "طبيب باطنة أو طبيب قلب"],
-      "الربو أو حساسية الصدر": ["البخاخ الموصوف في خطة الطبيب فقط", "طبيب صدرية أو حساسية ومناعة"],
-      "الأنيميا أو فقر الدم": ["مكمل الحديد فقط بعد تحليل وتحديد السبب", "طبيب باطنة أو أمراض دم"],
-      "القولون العصبي المحتمل": ["علاج الأعراض يحدده الصيدلي أو الطبيب حسب الحالة", "طبيب جهاز هضمي"],
-      "مشكلات المعدة أو جرثومة محتملة": ["علاج جرثومة المعدة يكون بروتوكولًا يحدده الطبيب بعد الاختبار", "طبيب جهاز هضمي"],
-      "التهاب أو احتقان الجيوب الأنفية": ["غسول ملحي وعلاج للأعراض بعد سؤال الصيدلي", "طبيب أنف وأذن"],
-      "التهاب مسالك بولية محتمل": ["لا تبدأ مضادًا حيويًا قبل التحليل ووصفة الطبيب", "طبيب مسالك بولية أو باطنة"]
-    };
-    const care = diseaseCare[matched.category];
     const tokens = matched.options.split(/مثل|أو|،/).map((token) => normalize(token)).filter((token) => token.length > 3);
     const catalog = getRecords().filter((record) => {
       const text = `${normalize(record["اسم الدواء"])} ${normalize(record["طبيعة الدواء"])} ${normalize(record["المادة الفعالة"])}`;
       return text.includes(normalize(matched.category)) || tokens.some((token) => text.includes(token));
     }).slice(0, 4);
     const names = catalog.map((record) => `<strong>${escapeHtml(record["اسم الدواء"])}</strong>`).join("، ");
-    return `أفهم إنك بتسأل عن <strong>${escapeHtml(matched.category)}</strong>.<br><strong>العلاج أو الدواء المحتمل:</strong> ${care ? escapeHtml(care[0]) : matched.options}.<br><strong>التخصص المناسب:</strong> ${care ? escapeHtml(care[1]) : "طبيب أو صيدلي حسب الحالة"}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
+    return `أفهم إنك بتشتكي من <strong>${escapeHtml(matched.category)}</strong>.<br><strong>خيارات عامة تسأل عنها الصيدلي:</strong> ${matched.options}.${names ? `<br><strong>موجود في سجل دوائي:</strong> ${names}.` : ""}<br><small>ده توجيه عام وليس تشخيصًا أو وصفة. لا تستخدم أي دواء إذا عندك حمل، مرض مزمن، حساسية، أو إذا كان المريض طفلًا إلا بعد سؤال الطبيب أو الصيدلي. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.</small>`;
   }
   const areaMatch = question.match(/(?:في|بـ|ب|منطقة)\s+(.+)/i);
   if (query.includes("صيدلي") || query.includes("فرع") || query.includes("عنوان")) {
     const area = areaMatch?.[1]?.trim() || state.areaQuery;
-    const entries = getNearbyPharmacies(area).filter(hasNamedPharmacy).slice(0, 10);
+    const entries = getNearbyPharmacies(area).slice(0, 10);
     if (entries.length) return `لقيت ${numberFormat.format(entries.length)} صيدليات في ${escapeHtml(area)}. تواصل معهم قبل الذهاب للتأكد من الخدمة والتوفر.`;
     return "اكتب اسم المنطقة أو المحافظة بشكل أوضح، وسأبحث في دليل الصيدليات القريبة.";
   }
@@ -686,16 +598,14 @@ function addAssistantMessage(text, kind) {
 function setupDonationAndAssistant() {
   document.querySelector("#donation-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const areaInput = document.querySelector("#donation-area");
-    const area = areaInput.value.trim();
-    state.areaQuery = area;
+    const area = document.querySelector("#donation-area").value.trim();
     const nationalId = document.querySelector("#donation-national-id").value.replace(/\D/g, "");
     const rows = [...document.querySelectorAll(".donation-medicine-row")].map((row) => ({ medicine: row.querySelector(".donation-medicine").value.trim(), quantity: row.querySelector(".donation-quantity").value.trim(), unit: row.querySelector(".donation-unit").value })).filter((item) => item.medicine);
     const latitude = document.querySelector("#donation-latitude")?.value || "";
     const longitude = document.querySelector("#donation-longitude")?.value || "";
     const imageFile = document.querySelector("#donation-image")?.files?.[0];
-    const imageData = await prepareDonationImage(imageFile);
-    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا، تاريخ ميلاد صحيح ويبدأ بـ 2 أو 3."); return; }
+    const imageData = await readDonationImage(imageFile);
+    if (!validEgyptianNationalId(nationalId)) { showToast("اكتب رقم قومي مصري صحيح: 14 رقمًا ويبدأ بـ 2 أو 3."); return; }
     if (!area || !rows.length || rows.some((item) => !item.quantity || !item.unit)) { showToast("اكتب المكان وأكمل اسم الدواء والكمية ونوع العبوة."); return; }
     renderDonationResults(rows[0].medicine, area);
     loadExternalPharmacies(area, latitude && longitude ? { latitude, longitude } : null).then(() => renderDonationResults(rows[0].medicine, area));
@@ -729,33 +639,15 @@ function setupDonationAndAssistant() {
     if (!navigator.geolocation) { showToast("المتصفح لا يدعم GPS."); return; }
     showToast("بنحدد مكانك للتبرع...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      const latitude = Number(coords.latitude).toFixed(6);
-      const longitude = Number(coords.longitude).toFixed(6);
-      const areaInput = document.querySelector("#donation-area");
-      document.querySelector("#donation-latitude").value = latitude;
-      document.querySelector("#donation-longitude").value = longitude;
-      areaInput.dataset.latitude = latitude;
-      areaInput.dataset.longitude = longitude;
-      // Keep the exact map point in the submitted donation, not only a reverse-geocoded area name.
-      areaInput.value = `موقعي على الخريطة: ${latitude}, ${longitude}`;
-      state.areaQuery = areaInput.value.trim();
-      let mapLink = document.querySelector("#donation-gps-location");
-      if (!mapLink) {
-        mapLink = document.createElement("a");
-        mapLink.id = "donation-gps-location";
-        mapLink.className = "donation-gps-location";
-        areaInput.closest("label")?.insertAdjacentElement("afterend", mapLink);
-      }
-      mapLink.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
-      mapLink.target = "_blank";
-      mapLink.rel = "noopener";
-      mapLink.textContent = `فتح نفس نقطة موقعي على الخريطة (${latitude}, ${longitude}) ⌖`;
+      document.querySelector("#donation-latitude").value = coords.latitude;
+      document.querySelector("#donation-longitude").value = coords.longitude;
       try {
-        const response = await fetch(`/api/area?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`);
+        const response = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`);
         const payload = await response.json();
-        showToast(payload.displayName ? `تم تثبيت نقطة GPS بدقة قرب ${payload.displayName}` : "تم تثبيت نقطة GPS على الخريطة.");
-      } catch { showToast("تم تثبيت نقطة GPS على الخريطة."); }
-    }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+        document.querySelector("#donation-area").value = payload.displayName || payload.area || payload.city || payload.governorate || "بالقرب من موقعك";
+        showToast(payload.displayName ? `تم تحديد مكان التبرع: ${payload.displayName}` : "تم تحديد مكان التبرع بالـ GPS.");
+      } catch { document.querySelector("#donation-area").value = "بالقرب من موقعك"; }
+    }, () => showToast("الموقع غير متاح؛ اكتب المكان يدويًا."), { timeout: 10000, maximumAge: 60000 });
   });
   document.querySelector("#assistant-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = document.querySelector("#assistant-input"); const question = input.value.trim(); if (!question) return; addAssistantMessage(escapeHtml(question), "user"); addAssistantMessage(assistantReply(question), "assistant"); input.value = ""; });
   document.querySelectorAll("[data-assistant-prompt]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector("#assistant-input"); input.value = button.dataset.assistantPrompt; input.focus(); }));
@@ -796,13 +688,11 @@ function setupEvents() {
   });
   document.querySelector("#area-search").addEventListener("input", (event) => {
     state.areaQuery = event.target.value.trim();
-    state.areaFromGps = false;
-    state.userCoordinates = null;
     state.externalPharmacies = [];
     renderAreaResults(state.areaQuery);
     if (state.matches.length) renderMedicineResults();
     window.clearTimeout(window.dawaeyAreaTimer);
-    if (state.areaQuery && !state.areaFromGps) window.dawaeyAreaTimer = window.setTimeout(() => { renderAreaResults(state.areaQuery); if (state.matches.length) renderMedicineResults(); }, 250);
+    if (state.areaQuery) window.dawaeyAreaTimer = window.setTimeout(() => loadExternalPharmacies(state.areaQuery).then(() => { renderAreaResults(state.areaQuery); if (state.matches.length) renderMedicineResults(); }), 650);
   });
   document.querySelector("#nearby-filter").addEventListener("click", () => {
     document.querySelector("#area-search").focus();
@@ -818,37 +708,33 @@ function setupEvents() {
     if (event.target.files?.length) searchFromPhoto(event.target.files[0]);
     event.target.value = "";
   });
-  const useGps = (event) => {
-    event?.preventDefault();
-    event?.stopPropagation();
+  const useGps = () => {
     if (!navigator.geolocation) { showToast("المتصفح مش بيدعم تحديد الموقع"); return; }
-    document.querySelector(".search-workspace .map-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    const patientMapWindow = window.open("https://www.google.com/maps/search/pharmacies+Egypt", "_blank");
+    const mapWindow = window.open("about:blank", "dawaey-nearby-map");
     showToast("بنحدد موقعك ونفتح خريطة الصيدليات القريبة...");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      const patientMapUrl = `https://www.google.com/maps/search/pharmacy/@${coords.latitude},${coords.longitude},15z`;
-      if (patientMapWindow && !patientMapWindow.closed) patientMapWindow.location.replace(patientMapUrl);
+      const coordinates = { latitude: Number(coords.latitude), longitude: Number(coords.longitude) };
+      const fallbackArea = "بالقرب من موقعك";
+      state.areaQuery = fallbackArea;
+      document.querySelector("#area-search").value = fallbackArea;
+      const mapUrl = `https://www.google.com/maps/search/pharmacies/@${coordinates.latitude},${coordinates.longitude},15z`;
+      if (mapWindow && !mapWindow.closed) mapWindow.location.href = mapUrl;
+      // لا تجعل تحويل الإحداثيات لاسم منطقة شرطًا للبحث؛ الإحداثيات نفسها أدق.
+      const pharmaciesPromise = loadExternalPharmacies("", coordinates);
       try {
-        const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(coords.longitude)}`, { credentials: "same-origin" });
+        const areaResponse = await fetch(`/api/area?lat=${encodeURIComponent(coordinates.latitude)}&lon=${encodeURIComponent(coordinates.longitude)}`, { credentials: "same-origin" });
         const areaPayload = await areaResponse.json().catch(() => ({}));
-        const area = areaPayload.area || areaPayload.city || areaPayload.governorate || "بالقرب من موقعك";
-        state.areaQuery = area;
-        state.areaFromGps = true;
-        state.userCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        const mapPanel = document.querySelector(".search-workspace .map-panel");
-        if (mapPanel) {
-          mapPanel.dataset.latitude = String(coords.latitude);
-          mapPanel.dataset.longitude = String(coords.longitude);
-          mapPanel.classList.add("has-user-location");
+        if (areaResponse.ok) {
+          const area = areaPayload.area || areaPayload.city || areaPayload.governorate || fallbackArea;
+          state.areaQuery = area;
+          document.querySelector("#area-search").value = area;
         }
-        await loadExternalPharmacies(area, { latitude: coords.latitude, longitude: coords.longitude });
-        renderAreaResults(area);
-        showToast(`ظهر دليل الصيدليات القريبة من ${area}.`);
-      } catch (error) {
-        showToast(error.message || "الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا");
-        document.querySelector("#area-search").focus();
-      }
-    }, () => { showToast("الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا"); }, { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 });
+      } catch { /* سيستمر البحث بالإحداثيات إذا تعطل reverse geocoding. */ }
+      await pharmaciesPromise;
+      renderAreaResults(state.areaQuery);
+      if (state.matches.length) renderMedicineResults();
+      showToast(`ظهر دليل الصيدليات القريبة من ${state.areaQuery}.`);
+    }, () => { if (mapWindow && !mapWindow.closed) mapWindow.close(); showToast("الموقع غير متاح؛ اكتب المحافظة أو المنطقة يدويًا"); }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   };
   document.querySelector("#use-location")?.addEventListener("click", useGps);
   document.querySelector("#use-location-directory")?.addEventListener("click", useGps);
@@ -863,23 +749,8 @@ function setupEvents() {
     const panel = document.querySelector("#notifications-panel");
     const button = document.querySelector("#patient-notifications");
     const opening = panel?.hasAttribute("hidden");
-    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }).catch(() => {}); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); try { localStorage.setItem(`dawaey-read-notifications:${state.user?.id}`, JSON.stringify(state.notifications.map((item) => item.id))); } catch {} renderNotifications(); } }
+    if (opening) { panel?.removeAttribute("hidden"); button?.setAttribute("aria-expanded", "true"); if (state.notifications.some((item) => !item.isRead)) { await fetch("/api/notifications/read", { method: "POST", credentials: "same-origin" }); state.notifications = state.notifications.map((item) => ({ ...item, isRead: true })); renderNotifications(); } }
     else { panel?.setAttribute("hidden", ""); button?.setAttribute("aria-expanded", "false"); }
-  });
-  document.addEventListener("click", async (event) => {
-    const link = event.target.closest("[data-open-notifications]");
-    if (!link) return;
-    event.preventDefault();
-    const panel = document.querySelector("#notifications-panel");
-    const button = document.querySelector("#patient-notifications");
-    panel?.removeAttribute("hidden");
-    button?.setAttribute("aria-expanded", "true");
-    panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    if (state.notifications.some((item) => !item.isRead)) {
-      await fetch(`/api/notifications/read?t=${Date.now()}`, { method: "POST", credentials: "same-origin", cache: "no-store" }).catch(() => {});
-      state.notifications = state.notifications.map((item) => ({ ...item, isRead: true }));
-      renderNotifications();
-    }
   });
   document.querySelector('.main-nav a[href="#dawaey-assistant"]')?.addEventListener("click", () => { window.setTimeout(() => document.querySelector("#assistant-input")?.focus(), 250); });
   document.querySelector("#notifications-panel")?.addEventListener("click", (event) => {
@@ -891,9 +762,7 @@ function setupEvents() {
     const content = document.querySelector("#pharmacy-details-dialog-content");
     if (!dialog || !content || !pharmacy) return;
     const phone = String(pharmacy.contact || "").replace(/[^\d+]/g, "");
-    const whatsappNumber = phone.replace(/^\+/, "").replace(/^0/, "20");
-    const mapTarget = pharmacy.locationUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pharmacy.name || "صيدلية"} ${pharmacy.address || "مصر"}`)}`;
-    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b>${phone ? `<a class="dialog-phone-link" href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "اتصال مباشر")}</a>` : escapeHtml(pharmacy.contact || "غير مسجل")}</p><div class="dialog-contact-actions">${phone ? `<a class="dialog-call-button" href="tel:${escapeHtml(phone)}">اتصال مباشر</a><a class="dialog-whatsapp-button" href="https://wa.me/${escapeHtml(whatsappNumber)}" target="_blank" rel="noopener">فتح واتساب</a>` : ""}</div><a class="dialog-map-link" href="${escapeHtml(mapTarget)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>`;
+    content.innerHTML = `<span class="dialog-eyebrow">بيانات التواصل</span><h2>${escapeHtml(pharmacy.name || "الصيدلية")}</h2><p><b>العنوان</b>${escapeHtml(pharmacy.address || "غير مسجل")}</p><p><b>رقم التواصل</b><a href="tel:${escapeHtml(phone)}">${escapeHtml(pharmacy.contact || "غير مسجل")}</a></p>${pharmacy.locationUrl ? `<a class="dialog-map-link" href="${escapeHtml(pharmacy.locationUrl)}" target="_blank" rel="noopener">فتح موقع الصيدلية على الخريطة ↗</a>` : ""}`;
     dialog.showModal();
   });
   document.querySelector("#theme-toggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
